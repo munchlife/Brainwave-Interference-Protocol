@@ -67,9 +67,8 @@ router.post('/request-passcode', async (req, res) => {
     }
 });
 
-// POST: Login with email and passcode
 router.post('/login', async (req, res) => {
-    const { email, passcode } = req.body; // User provides email and passcode
+    const { email, passcode, firstName, lastName } = req.body; // Add optional fields for account claiming
 
     if (!email || !passcode) {
         return res.status(400).json({ error: 'Email and passcode are required.' });
@@ -82,7 +81,7 @@ router.post('/login', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Check if the passcode matches and if it's expired
+        // Check if passcode is generated and not expired
         if (!user.passcode || !user.passcodeExpiration) {
             return res.status(401).json({ error: 'Passcode not generated or expired.' });
         }
@@ -99,22 +98,43 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Passcode has expired' });
         }
 
-        // Create JWT token that lasts for 1 year
+        // If the account is not registered, allow claiming
+        if (!user.registered) {
+            if (!firstName || !lastName) {
+                return res.status(400).json({
+                    error: 'First name and last name are required to claim this account.',
+                });
+            }
+
+            // Update the user's information
+            user.firstName = firstName;
+            user.lastName = lastName;
+            user.registered = true; // Mark the account as registered
+            user.passcode = null; // Clear passcode after claiming
+            user.passcodeExpiration = null;
+            await user.save();
+
+            return res.status(200).json({
+                message: 'Account claimed successfully. You can now log in.',
+                lifeId: user.lifeId,
+            });
+        }
+
+        // For registered users, proceed with login
         const token = jwt.sign(
-            { lifeId: user.lifeId, email: user.email },  // Payload
-            JWT_SECRET_KEY,  // Secret key for signing
-            { expiresIn: '1y' } // Session lasts for 1 year
+            { lifeId: user.lifeId, email: user.email }, // Payload
+            JWT_SECRET_KEY, // Secret key for signing
+            { expiresIn: '1y' } // Token expiry
         );
 
-        // Optionally, clear passcode after successful login for security
+        // Clear passcode after successful login for security
         user.passcode = null;
         user.passcodeExpiration = null;
         await user.save();
 
-        // Respond with the generated JWT token
         res.status(200).json({
             message: 'Login successful',
-            token
+            token,
         });
 
     } catch (err) {

@@ -1,4 +1,3 @@
-// models/InterferenceReceipt.js
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js'); // Import your sequelize instance
 const Life = require('../dataModels/life.js'); // Import the Life model
@@ -11,7 +10,7 @@ const InterferenceReceipt = sequelize.define('InterferenceReceipt', {
         autoIncrement: true, // Automatically increment the ID
     },
     interferenceDegree: {
-        type: DataTypes.BOOLEAN,
+        type: DataTypes.BOOLEAN, // Set as BOOLEAN to indicate constructive (true) or destructive (false) interference
         allowNull: false,
     },
     bandPowerIncrease: {
@@ -34,10 +33,32 @@ const InterferenceReceipt = sequelize.define('InterferenceReceipt', {
         type: DataTypes.STRING,
         allowNull: true,
     },
+    interfererId: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // Stores the ID of the interferer (if applicable)
+    },
+    lifeId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: Life, // Ensures that the foreign key points to the 'Life' model
+            key: 'lifeId',
+        },
+        onUpdate: 'CASCADE', // If lifeId changes, update this field accordingly
+        onDelete: 'SET NULL', // If the associated Life is deleted, set lifeId to NULL
+    },
+}, {
+    indexes: [
+        { fields: ['lifeId'] }, // Index on lifeId for faster querying of interference receipts by Life
+    ],
 });
 
 // Define the relationship between InterferenceReceipt and Life (Association)
 InterferenceReceipt.belongsTo(Life, { foreignKey: 'lifeId' });
+
+InterferenceReceipt.sync({ alter: true }) // Use 'alter' for schema migrations
+    .then(() => console.log('InterferenceReceipt model synced'))
+    .catch(err => console.error('Error syncing InterferenceReceipt model:', err));
 
 module.exports = InterferenceReceipt;
 

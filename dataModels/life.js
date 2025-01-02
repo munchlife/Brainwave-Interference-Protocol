@@ -20,6 +20,7 @@ const Life = sequelize.define('Life', {
   email: {
     type: DataTypes.STRING,
     allowNull: true,
+    unique: true, // Ensure email is unique in the database
   },
   registered: {
     type: DataTypes.BOOLEAN,
@@ -70,14 +71,33 @@ const Life = sequelize.define('Life', {
     type: DataTypes.FLOAT,
     allowNull: true,
   },
+  NeuralSynchronyCohortId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: NeuralSynchronyCohort,
+      key: 'id'
+    },
+    onUpdate: 'CASCADE', // Update foreign key on parent change
+    onDelete: 'SET NULL', // Set to null if parent is deleted
+  },
+  checkedIn: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false,
+  }
+}, {
+  indexes: [
+    { fields: ['email'], unique: true }, // Index for email field
+  ],
 });
 
 Life.hasMany(NeuralSynchronyCohort, { foreignKey: 'lifeId', as: 'neuralSynchronyCohorts' });
+Life.belongsTo(NeuralSynchronyCohort, { foreignKey: 'neuralSynchronyCohortId' });
 
-Life.sync({ force: false })
+Life.sync({ alter: true }) // Use `alter` for schema migrations
     .then(() => console.log('Life model synced'))
     .catch(err => console.error('Error syncing Life model:', err));
 
 module.exports = Life;
-
 

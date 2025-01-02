@@ -28,6 +28,84 @@ router.get('/:lifeId/cohorts', authenticateToken, async (req, res) => {
     }
 });
 
+// POST: Create a new Neural Synchrony Cohort and associate lives
+router.post('/create', authenticateToken, async (req, res) => {
+    const { topic, phaseLockingValue, lifeIds } = req.body;
+
+    if (!topic || phaseLockingValue == null || !Array.isArray(lifeIds) || lifeIds.length === 0) {
+        return res.status(400).json({ error: 'Missing required fields or invalid lifeIds array' });
+    }
+
+    try {
+        const newCohort = await NeuralSynchronyCohort.create({ topic, phaseLockingValue });
+
+        const lives = await Life.findAll({ where: { lifeId: lifeIds } });
+
+        if (lives.length !== lifeIds.length) {
+            return res.status(404).json({ error: 'One or more lifeIds not found' });
+        }
+
+        await Promise.all(
+            lives.map(life => life.update({ neuralSynchronyCohortId: newCohort.neuralSynchronyCohortId }))
+        );
+
+        res.status(201).json({ message: 'Neural Synchrony Cohort created successfully', newCohort });
+    } catch (error) {
+        console.error('Error creating Neural Synchrony Cohort:', error);
+        res.status(500).json({ error: 'Failed to create Neural Synchrony Cohort' });
+    }
+});
+
+// POST: Check-in a life to a Neural Synchrony Cohort
+router.post('/:neuralSynchronyCohortId/check-in', authenticateToken, async (req, res) => {
+    const { lifeId } = req.body;
+    const { neuralSynchronyCohortId } = req.params;
+
+    try {
+        // Check if the life is already checked into the cohort
+        const existingLife = await Life.findOne({
+            include: [{
+                model: NeuralSynchronyCohort,
+                required: true,
+                where: { id: neuralSynchronyCohortId },
+            }],
+        });
+
+        if (existingLife) {
+            return res.status(400).json({ message: 'This life is already checked into the specified cohort' });
+        }
+
+        // Fetch the life details from the Life model
+        const life = await Life.findByPk(lifeId);
+        if (!life) {
+            return res.status(404).json({ message: 'Life not found' });
+        }
+
+        // Fetch the cohort details from the NeuralSynchronyCohort model
+        const cohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
+        if (!cohort) {
+            return res.status(404).json({ message: 'Cohort not found' });
+        }
+
+        // Set the relationship between Life and NeuralSynchronyCohort
+        life.NeuralSynchronyCohortId = neuralSynchronyCohortId;  // Associate with NeuralSynchronyCohort
+        life.checkedIn = true;  // Mark as checked-in
+        await life.save();  // Save the updates to the Life model
+
+        // Send success response
+        res.status(200).json({ message: 'Life successfully checked into the cohort', life });
+    } catch (err) {
+        console.error('Error checking in life to cohort:', err);
+        res.status(500).json({ error: 'Failed to check in life to cohort' });
+    }
+});
+
+// Helper function to calculate PLV for a pair of lives
+const calculatePLV = (phaseA, phaseB) => {
+    const phaseDifference = Math.abs(phaseA - phaseB);
+    return Math.abs(Math.cos(phaseDifference));
+};
+
 // GET: Calculate and return pairwise or group PLVs for the Neural Synchrony Cohort
 router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, async (req, res) => {
     const { neuralSynchronyCohortId } = req.params;
@@ -95,7 +173,7 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
             include: [{
                 model: NeuralSynchronyCohort,
                 required: true,
-                where: { id: neuralSynchronyCohortId },
+                where: { neuralSynchronyCohortId },
             }],
             where: { checkedIn: true },
         });
@@ -113,7 +191,6 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
             frequencyWeighted: 0,
         };
 
-        const numberOfLives = lives.length;
         lives.forEach(life => {
             sumBandpowers.delta += life.bandpowerDelta || 0;
             sumBandpowers.theta += life.bandpowerTheta || 0;
@@ -123,6 +200,7 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
             sumBandpowers.frequencyWeighted += life.frequencyWeightedBandpower || 0;
         });
 
+        const numberOfLives = lives.length;
         const averages = {
             delta: sumBandpowers.delta / numberOfLives,
             theta: sumBandpowers.theta / numberOfLives,
@@ -132,84 +210,25 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
             frequencyWeighted: sumBandpowers.frequencyWeighted / numberOfLives,
         };
 
+        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
+        if (!neuralSynchronyCohort) {
+            return res.status(404).json({ message: 'Cohort not found' });
+        }
+
+        neuralSynchronyCohort.groupBandpowerDelta = averages.delta;
+        neuralSynchronyCohort.groupBandpowerTheta = averages.theta;
+        neuralSynchronyCohort.groupBandpowerAlpha = averages.alpha;
+        neuralSynchronyCohort.groupBandpowerBeta = averages.beta;
+        neuralSynchronyCohort.groupBandpowerGamma = averages.gamma;
+        neuralSynchronyCohort.groupFrequencyWeightedBandpower = averages.frequencyWeighted;
+
+        await neuralSynchronyCohort.save();
         res.status(200).json(averages);
+
     } catch (err) {
         console.error('Error fetching group bandpower:', err);
         res.status(500).json({ error: 'Failed to fetch group bandpower' });
     }
 });
-
-// POST: Create a new Neural Synchrony Cohort and associate lives
-router.post('/create', authenticateToken, async (req, res) => {
-    const { topic, phaseLockingValue, lifeIds } = req.body;
-
-    if (!topic || phaseLockingValue == null || !Array.isArray(lifeIds) || lifeIds.length === 0) {
-        return res.status(400).json({ error: 'Missing required fields or invalid lifeIds array' });
-    }
-
-    try {
-        const newCohort = await NeuralSynchronyCohort.create({ topic, phaseLockingValue });
-
-        const lives = await Life.findAll({ where: { lifeId: lifeIds } });
-
-        if (lives.length !== lifeIds.length) {
-            return res.status(404).json({ error: 'One or more lifeIds not found' });
-        }
-
-        await Promise.all(
-            lives.map(life => life.update({ neuralSynchronyCohortId: newCohort.neuralSynchronyCohortId }))
-        );
-
-        res.status(201).json({ message: 'Neural Synchrony Cohort created successfully', newCohort });
-    } catch (error) {
-        console.error('Error creating Neural Synchrony Cohort:', error);
-        res.status(500).json({ error: 'Failed to create Neural Synchrony Cohort' });
-    }
-});
-
-// POST: Check-in a life to a Neural Synchrony Cohort
-router.post('/:neuralSynchronyCohortId/check-in', authenticateToken, async (req, res) => {
-    const { lifeId } = req.body;
-    const { neuralSynchronyCohortId } = req.params;
-
-    try {
-        const existingLife = await Life.findOne({
-            include: [{
-                model: NeuralSynchronyCohort,
-                required: true,
-                where: { id: neuralSynchronyCohortId },
-            }],
-        });
-
-        if (existingLife) {
-            return res.status(400).json({ message: 'This cohort already has a life checked in' });
-        }
-
-        const life = await Life.findByPk(lifeId);
-        if (!life) {
-            return res.status(404).json({ message: 'Life not found' });
-        }
-
-        const cohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
-        if (!cohort) {
-            return res.status(404).json({ message: 'Cohort not found' });
-        }
-
-        life.set('NeuralSynchronyCohortId', neuralSynchronyCohortId);
-        life.checkedIn = true;
-        await life.save();
-
-        res.status(200).json({ message: 'Life successfully checked into the cohort', life });
-    } catch (err) {
-        console.error('Error checking in life to cohort:', err);
-        res.status(500).json({ error: 'Failed to check in life to cohort' });
-    }
-});
-
-// Helper function to calculate PLV for a pair of lives
-const calculatePLV = (phaseA, phaseB) => {
-    const phaseDifference = Math.abs(phaseA - phaseB);
-    return Math.abs(Math.cos(phaseDifference));
-};
 
 module.exports = router;

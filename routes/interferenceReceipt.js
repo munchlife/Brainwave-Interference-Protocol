@@ -48,9 +48,8 @@ router.get('/receipt/:id', authenticateToken, async (req, res) => {
 });
 
 // POST: Create a new InterferenceReceipt record
-router.post('/create', authenticateToken, async (req, res) => {
+router.post('/create/:lifeId', authenticateToken, async (req, res) => {
     const {
-        lifeId,
         interferenceDegree,
         bandPowerDelta,
         bandPowerTheta,
@@ -59,13 +58,25 @@ router.post('/create', authenticateToken, async (req, res) => {
         bandPowerGamma,
         frequencyWeightedBandpower,
         wordDefinition,
+        interfererEmail, // Email address of the interferer (tagged on the front-end)
     } = req.body;
+
+    const { lifeId } = req.params;
 
     try {
         // Fetch Life details
         const life = await Life.findByPk(lifeId);
         if (!life) {
             return res.status(404).json({ error: 'Life not found' });
+        }
+
+        // Find the interferer by email (if provided)
+        let interferer = null;
+        if (interfererEmail) {
+            interferer = await Life.findOne({ where: { email: interfererEmail } });
+            if (!interferer) {
+                return res.status(404).json({ error: 'Interferer not found' });
+            }
         }
 
         // Retrieve previous bandpower values
@@ -116,6 +127,13 @@ router.post('/create', authenticateToken, async (req, res) => {
         life.frequencyWeightedBandpower = frequencyWeightedBandpower;
         await life.save();
 
+        // Award interference units to the interferer
+        if (interferer) {
+            interferer.constructiveInterferenceTotal += constructiveInterferenceUnits;
+            interferer.destructiveInterferenceTotal += destructiveInterferenceUnits;
+            await interferer.save();
+        }
+
         // Create a new InterferenceReceipt entry
         const newInterferenceReceipt = await InterferenceReceipt.create({
             lifeId: life.id,
@@ -133,6 +151,7 @@ router.post('/create', authenticateToken, async (req, res) => {
             constructiveInterferenceUnits,
             destructiveInterferenceUnits,
             wordDefinition,
+            interfererId: interferer ? interferer.id : null, // Reference interferer if provided
         });
 
         return res.status(201).json(newInterferenceReceipt);
