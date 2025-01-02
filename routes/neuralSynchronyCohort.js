@@ -100,11 +100,80 @@ router.post('/:neuralSynchronyCohortId/check-in', authenticateToken, async (req,
     }
 });
 
-// Helper function to calculate PLV for a pair of lives
-const calculatePLV = (phaseA, phaseB) => {
+// // Helper function to calculate PLV for a pair of lives
+// const calculatePLV = (phaseA, phaseB) => {
+//     const phaseDifference = Math.abs(phaseA - phaseB);
+//     return Math.abs(Math.cos(phaseDifference));
+// };
+
+// GET: Calculate and return pairwise or group PLVs for the Neural Synchrony Cohort
+router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, async (req, res) => {
+    const { neuralSynchronyCohortId } = req.params;
+    const { calculationType } = req.query;
+
+    if (!['pairwise', 'group'].includes(calculationType)) {
+        return res.status(400).json({ error: "Invalid calculationType. It should be either 'pairwise' or 'group'." });
+    }
+
+    try {
+        const lives = await Life.findAll({
+            include: [{
+                model: NeuralSynchronyCohort,
+                required: true,
+                where: { id: neuralSynchronyCohortId },
+            }],
+            where: { checkedIn: true },
+        });
+
+        if (!lives || lives.length < 2) {
+            return res.status(404).json({ message: 'Not enough checked-in lives found for this cohort.' });
+        }
+
+        const pairwisePhaseLockingValues = [];
+        let totalPhaseLockingValue = 0;
+
+        for (let i = 0; i < lives.length; i++) {
+            for (let j = i + 1; j < lives.length; j++) {
+                const lifeA = lives[i];
+                const lifeB = lives[j];
+
+                const phaseA = lifeA.phase;
+                const phaseB = lifeB.phase;
+
+                if (phaseA == null || phaseB == null) {
+                    continue;
+                }
+
+                // Adjust the phase locking value calculation to work with the 0-180 degree range
+                const phaseLockingValue = calculatePLV(phaseA, phaseB);
+                pairwisePhaseLockingValues.push({ pair: [lifeA.lifeId, lifeB.lifeId], phaseLockingValue });
+                totalPhaseLockingValue += phaseLockingValue;
+            }
+        }
+
+        const groupPhaseLockingValue = pairwisePhaseLockingValues.length > 0 ? totalPhaseLockingValue / pairwisePhaseLockingValues.length : 0;
+
+        if (calculationType === 'pairwise') {
+            res.status(200).json({ phaseLockingValues: pairwisePhaseLockingValues });
+        } else if (calculationType === 'group') {
+            res.status(200).json({ phaseLockingValue: groupPhaseLockingValue, phaseLockingValues: pairwisePhaseLockingValues });
+        }
+
+    } catch (err) {
+        console.error('Error calculating PLV:', err);
+        res.status(500).json({ error: 'Failed to calculate phase-locking value' });
+    }
+});
+
+function calculatePLV(phaseA, phaseB) {
     const phaseDifference = Math.abs(phaseA - phaseB);
-    return Math.abs(Math.cos(phaseDifference));
-};
+
+    // Ensure phaseDifference is within the 0-180 degree range
+    const adjustedDifference = Math.min(phaseDifference, 360 - phaseDifference);
+
+    // Normalize to a scale from 0 to 1 and directly calculate the phase-locking value in the 0-180 degree system
+    return ((180 - adjustedDifference) / 180) * 180;
+}
 
 // GET: Calculate and return pairwise or group PLVs for the Neural Synchrony Cohort
 router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, async (req, res) => {
