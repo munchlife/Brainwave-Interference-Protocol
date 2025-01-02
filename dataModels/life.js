@@ -67,7 +67,24 @@ const Life = sequelize.define('Life', {
     allowNull: false,
     defaultValue: 0,
   },
-  phase: {
+  // Phase values for each frequency band
+  phaseDelta: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  phaseTheta: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  phaseAlpha: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  phaseBeta: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  phaseGamma: {
     type: DataTypes.FLOAT,
     allowNull: true,
   },
@@ -100,4 +117,3 @@ Life.sync({ alter: true }) // Use `alter` for schema migrations
     .catch(err => console.error('Error syncing Life model:', err));
 
 module.exports = Life;
-

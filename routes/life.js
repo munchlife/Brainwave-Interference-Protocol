@@ -92,15 +92,29 @@ router.post('/:lifeId/update-bandpower', authenticateToken, verifyLifeId, async 
     }
 });
 
-// POST: Update the frequency-weighted phase
+// POST: Update the frequency-weighted phase for each band
 router.post('/:lifeId/phase', authenticateToken, verifyLifeId, async (req, res) => {
-    const { phase } = req.body;
+    const { phase } = req.body;  // phase should be an object with keys for each band (e.g., delta, theta, etc.)
+
+    // Ensure the phase object contains valid values for each band
+    const validBands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
+    const phaseKeys = Object.keys(phase || {});
+
+    // Check if all keys in phase are valid bands
+    const invalidBands = phaseKeys.filter(key => !validBands.includes(key));
+    if (invalidBands.length > 0) {
+        return res.status(400).json({ error: `Invalid phase keys: ${invalidBands.join(', ')}` });
+    }
 
     try {
         const life = req.life; // Already validated by middleware
 
-        // Update the phase value in the Life record
-        life.phase = phase || life.phase;
+        // Update the phase for each valid band
+        validBands.forEach(band => {
+            if (phase[band] !== undefined) {
+                life[band] = phase[band];  // Store the phase for each band
+            }
+        });
 
         // Save the updated life data
         await life.save();
