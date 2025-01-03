@@ -19,7 +19,7 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
         allowNull: false,
         validate: {
             min: 0,
-            max: 1,
+            max: 180,
         },
     },
     groupBandpowerDelta: {
@@ -62,6 +62,46 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
         allowNull: false,
         validate: {
             min: 0,
+        },
+    },
+    groupDeltaPhaseLockingValue: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        validate: {
+            min: 0,
+            max: 180,
+        },
+    },
+    groupThetaPhaseLockingValue: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        validate: {
+            min: 0,
+            max: 180,
+        },
+    },
+    groupAlphaPhaseLockingValue: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        validate: {
+            min: 0,
+            max: 180,
+        },
+    },
+    groupBetaPhaseLockingValue: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        validate: {
+            min: 0,
+            max: 180,
+        },
+    },
+    groupGammaPhaseLockingValue: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        validate: {
+            min: 0,
+            max: 180,
         },
     },
     lifeId: {

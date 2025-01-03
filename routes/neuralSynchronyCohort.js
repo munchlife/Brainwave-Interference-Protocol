@@ -164,17 +164,18 @@ router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, a
                         const phaseLockingValue = calculatePLV(phaseA, phaseB);
 
                         // Categorize the interference
-                        const constructiveOrDestructive =
+                        const interferenceType =
                             phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
 
                         const normalizedValue = phaseLockingValue <= 90
                             ? (90 - phaseLockingValue) / 90 // Constructive
                             : (phaseLockingValue - 90) / 90; // Destructive
 
-                        // Log interference
-                        lifeA[constructiveOrDestructive] = normalizedValue;
-                        lifeB[constructiveOrDestructive] = normalizedValue;
+                        // Log interference for both lives in the pair
+                        lifeA[interferenceType] = (lifeA[interferenceType] || 0) + normalizedValue;
+                        lifeB[interferenceType] = (lifeB[interferenceType] || 0) + normalizedValue;
 
+                        // Push pairwise calculation
                         pairwisePhaseLockingValues.push({
                             band,
                             pair: [lifeA.lifeId, lifeB.lifeId],
@@ -212,11 +213,16 @@ router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, a
         });
         await cohort.save();
 
+        // Save the interference results back to the database for each life
+        for (const life of lives) {
+            await life.save();
+        }
+
         // Respond with the calculated PLVs
         if (calculationType === 'pairwise') {
             res.status(200).json({ phaseLockingValues: pairwisePhaseLockingValues });
         } else if (calculationType === 'group') {
-            res.status(200).json({ groupPLVs, pairwisePhaseLockingValues });
+            res.status(200).json({ groupPLVs, phaseLockingValues: pairwisePhaseLockingValues });
         }
     } catch (err) {
         console.error('Error calculating PLV:', err);
