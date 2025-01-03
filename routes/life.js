@@ -83,6 +83,9 @@ router.post('/:lifeId/update-bandpower', authenticateToken, verifyLifeId, async 
         life.bandpowerGamma = bandpowerGamma;
         life.frequencyWeightedBandpower = frequencyWeightedBandpower;
 
+        // Update the timestamp to mark the change
+        life.timestamp = new Date();
+
         // Save the updated life
         await life.save();
 
@@ -116,6 +119,9 @@ router.post('/:lifeId/update-phase', authenticateToken, verifyLifeId, async (req
                 life[band] = phase[band];  // Store the phase for each band
             }
         });
+
+        // Update the timestamp to mark the change
+        life.timestamp = new Date();
 
         // Save the updated life data
         await life.save();
@@ -157,62 +163,63 @@ function calculateInterference(phaseDifference) {
     return 0;
 }
 
-// Endpoint to get brainwave-Schumann alignment and log interference
 router.get('/:lifeId/schumann-alignment', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.params;
 
     try {
-        // Fetch the life record based on lifeId using findByPk
-        const life = await Life.findByPk(lifeId);
-
-        if (!life) {
-            return res.status(404).json({ error: 'Life not found' });
+        // Fetch the life record by lifeId
+        const latestPhaseData = await Life.findByPk(lifeId);
+        if (!latestPhaseData) {
+            return res.status(404).json({ error: 'No phase data found for this lifeId' });
         }
 
-        // Fetch all Schumann resonance records
+        // Filter the phases that are non-null
+        const brainwaveBands = ['Alpha', 'Beta', 'Theta', 'Delta', 'Gamma'];
+        const validPhases = brainwaveBands.filter(band => latestPhaseData[`phase${band}`] !== null);
+
+        if (validPhases.length === 0) {
+            return res.status(404).json({ error: 'No valid phase data found for this lifeId' });
+        }
+
+        // Fetch Schumann resonance data
         const schumannResonances = await SchumannResonance.findAll();
         if (!schumannResonances.length) {
             return res.status(404).json({ error: 'No Schumann resonance data found' });
         }
 
         // Find the closest Schumann resonance timestamp to the life’s timestamp
-        const closestSchumann = getClosestSchumannResonance(life.timestamp, schumannResonances);
+        const closestSchumann = getClosestSchumannResonance(latestPhaseData.timestamp, schumannResonances);
 
-        // Define the brainwave bands (this should correspond to the phase fields in the Life model)
-        const brainwaveBands = ['Alpha', 'Beta', 'Theta', 'Delta', 'Gamma']; // Example brainwave bands
+        // Calculate phase differences and interference for each band
+        const interferenceResults = {};
 
-        // Initialize an array to hold the promises
-        const interferencePromises = [];
-
-        // Loop through the brainwave bands and calculate the interference for each
-        for (const band of brainwaveBands) {
-            const bandPhase = life[`phase${band}`]; // Assuming the phases are named phaseAlpha, phaseBeta, etc.
-
-            if (bandPhase === undefined) continue; // Skip if phase data is not available for this band
-
-            // Calculate phase difference and interference
-            const phaseDifference = calculatePhaseDifference(bandPhase, closestSchumann[`phase${band}`]);
-            const interferenceValue = calculateInterference(phaseDifference);
-
-            // Log interference into the appropriate field in the life record
-            if (phaseDifference <= 90) {
-                life.objectiveConstructiveInterference = interferenceValue;
-            } else if (phaseDifference <= 180) {
-                life.objectiveDestructiveInterference = interferenceValue;
+        validPhases.forEach(band => {
+            const bandPhase = latestPhaseData[`phase${band}`];
+            if (bandPhase !== null) {
+                const phaseDifference = calculatePhaseDifference(bandPhase, closestSchumann[`phase${band}`]);
+                interferenceResults[band] = {
+                    phaseDifference,
+                    interference: calculateInterference(phaseDifference),
+                };
             }
+        });
 
-            // Push the save operation into the array
-            interferencePromises.push(life.save());
-        }
+        // Update interference values in the latest row
+        latestPhaseData.objectiveConstructiveInterference = Object.values(interferenceResults)
+            .filter(result => result.phaseDifference <= 90)
+            .reduce((sum, result) => sum + result.interference, 0);
 
-        // Wait for all interference calculations to complete and the life data to be saved
-        await Promise.all(interferencePromises);
+        latestPhaseData.objectiveDestructiveInterference = Object.values(interferenceResults)
+            .filter(result => result.phaseDifference > 90)
+            .reduce((sum, result) => sum + result.interference, 0);
 
-        res.status(200).json({ message: 'Brainwave-Schumann alignment phase calculated and logged' });
+        // Save the updated row with the latest interference values
+        await latestPhaseData.save();
 
+        res.status(200).json({ message: 'Schumann alignment calculated', results: interferenceResults });
     } catch (err) {
-        console.error('Error fetching life or Schumann data:', err);
-        res.status(500).json({ error: 'Failed to fetch life or Schumann data' });
+        console.error('Error in Schumann alignment:', err);
+        res.status(500).json({ error: 'Failed to calculate Schumann alignment' });
     }
 });
 

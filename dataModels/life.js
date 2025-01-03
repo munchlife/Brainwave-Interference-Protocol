@@ -19,7 +19,7 @@ const Life = sequelize.define('Life', {
   },
   email: {
     type: DataTypes.STRING,
-    allowNull: true,
+    allowNull: false,
     unique: true, // Ensure email is unique in the database
   },
   registered: {
@@ -99,8 +99,7 @@ const Life = sequelize.define('Life', {
   },
   timestamp: {
     type: DataTypes.DATE,
-    allowNull: false,
-    defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'), // This is correct syntax for current time
+    allowNull: true,
   },
   NeuralSynchronyCohortId: {
     type: DataTypes.INTEGER,
