@@ -57,17 +57,6 @@ const Life = sequelize.define('Life', {
     allowNull: false,
     defaultValue: 0,
   },
-  constructiveInterference: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 0,
-  },
-  destructiveInterference: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    defaultValue: 0,
-  },
-  // Phase values for each frequency band
   phaseDelta: {
     type: DataTypes.FLOAT,
     allowNull: true,
@@ -87,6 +76,31 @@ const Life = sequelize.define('Life', {
   phaseGamma: {
     type: DataTypes.FLOAT,
     allowNull: true,
+  },
+  subjectiveConstructiveInterference: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+  },
+  subjectiveDestructiveInterference: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+  },
+  objectiveConstructiveInterference: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+  },
+  objectiveDestructiveInterference: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    defaultValue: 0,
+  },
+  timestamp: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'), // This is correct syntax for current time
   },
   NeuralSynchronyCohortId: {
     type: DataTypes.INTEGER,
