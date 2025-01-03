@@ -1,4 +1,4 @@
-const Life = require('../dataModels/life.js');
+const LifeAccount = require('../dataModels/lifeAccount.js');
 
 /**
  * Middleware to check if the token's lifeId matches the requested lifeId.

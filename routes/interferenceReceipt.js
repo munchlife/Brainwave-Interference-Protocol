@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const Life = require('../dataModels/life.js'); // Import the Life model (to link with Life)
+const { sequelize } = require('../dataModels/database.js');
+const LifeAccount = require('../dataModels/lifeAccount.js'); // Import the Life model (to link with Life)
 const InterferenceReceipt = require('../dataModels/interferenceReceipt.js'); // Import the InterferenceReceipt model
 const authenticateToken = require('../middlewares/authenticateToken'); // Import the middleware
 
@@ -10,7 +11,7 @@ router.get('/receipts/:lifeId', authenticateToken, async (req, res) => {
 
     try {
         // Check if the lifeId exists in the Life table
-        const lifeExists = await Life.findByPk(lifeId);
+        const lifeExists = await LifeAccount.findByPk(lifeId);
 
         if (!lifeExists) {
             return res.status(404).json({ error: 'Life not found' });
@@ -47,7 +48,6 @@ router.get('/receipt/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// POST: Create a new InterferenceReceipt record
 router.post('/create/:lifeId', authenticateToken, async (req, res) => {
     const {
         interferenceDegree,
@@ -58,28 +58,35 @@ router.post('/create/:lifeId', authenticateToken, async (req, res) => {
         bandPowerGamma,
         frequencyWeightedBandpower,
         wordDefinition,
-        interfererEmail, // Email address of the interferer (tagged on the front-end)
+        interfererEmail, // Email address of the interferer
     } = req.body;
 
     const { lifeId } = req.params;
 
     try {
-        // Fetch Life details
-        const life = await Life.findByPk(lifeId);
+        // Fetch Life details by lifeId
+        const life = await LifeAccount.findByPk(lifeId);
         if (!life) {
             return res.status(404).json({ error: 'Life not found' });
         }
 
-        // Find the interferer by email (if provided)
+        // Validate and fetch the interferer if the email is provided
         let interferer = null;
         if (interfererEmail) {
-            interferer = await Life.findOne({ where: { email: interfererEmail } });
+            if (typeof interfererEmail !== 'string' || !interfererEmail) {
+                return res.status(400).json({ error: 'Invalid email format' });
+            }
+
+            interferer = await LifeAccount.findOne({
+                where: sequelize.literal(`email = '${interfererEmail}'`),
+            });
+
             if (!interferer) {
                 return res.status(404).json({ error: 'Interferer not found' });
             }
         }
 
-        // Retrieve previous bandpower values
+        // Retrieve previous bandpower values from the LifeAccount
         const previousBandpowers = {
             delta: life.bandpowerDelta,
             theta: life.bandpowerTheta,
@@ -101,7 +108,7 @@ router.post('/create/:lifeId', authenticateToken, async (req, res) => {
         let constructiveInterferenceUnits = 0;
         let destructiveInterferenceUnits = 0;
 
-        // Calculate percent changes for each band
+        // Calculate percent changes for each band and interference units
         const percentChanges = {};
         for (const band in previousBandpowers) {
             if (previousBandpowers[band] !== null) {
@@ -118,7 +125,7 @@ router.post('/create/:lifeId', authenticateToken, async (req, res) => {
             }
         }
 
-        // Update Life's bandpower fields
+        // Update Life's bandpower fields with the new values
         life.bandpowerDelta = bandPowerDelta;
         life.bandpowerTheta = bandPowerTheta;
         life.bandpowerAlpha = bandPowerAlpha;
@@ -127,7 +134,7 @@ router.post('/create/:lifeId', authenticateToken, async (req, res) => {
         life.frequencyWeightedBandpower = frequencyWeightedBandpower;
         await life.save();
 
-        // Award interference units to the interferer
+        // Award interference units to the interferer (if found)
         if (interferer) {
             interferer.constructiveInterferenceTotal += constructiveInterferenceUnits;
             interferer.destructiveInterferenceTotal += destructiveInterferenceUnits;
@@ -156,8 +163,7 @@ router.post('/create/:lifeId', authenticateToken, async (req, res) => {
 
         return res.status(201).json(newInterferenceReceipt);
     } catch (err) {
-        console.error('Error creating InterferenceReceipt:', err);
-        return res.status(500).json({ error: 'Server error' });
+        return res.status(500).json({ error: 'Server error', details: err.message });
     }
 });
 

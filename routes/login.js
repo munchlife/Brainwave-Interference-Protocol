@@ -3,8 +3,30 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const { Life } = require('../dataModels/life.js'); // Assuming you have the Life model for the users
+const { LifeAccount } = require('../dataModels/lifeAccount.js');
 const router = express.Router();
+
+
+// POST: Create a new Life account
+router.post('/create', async (req, res) => {
+    const { email, firstName, lastName, registered } = req.body;
+
+    try {
+        // Create the life account in the LifeAccount table
+        const newLifeAccount = await LifeAccount.create({
+            email,
+            firstName,
+            lastName,
+            registered: registered || false,
+        });
+
+        // Respond with the created LifeAccount
+        return res.status(201).json(newLifeAccount);
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // Email setup (configure your email provider and credentials)
 const transporter = nodemailer.createTransport({
@@ -18,65 +40,19 @@ const transporter = nodemailer.createTransport({
 // JWT Secret Key for signing (store securely in environment variables)
 const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY || 'your-secret-key';
 
-// POST: Request a passcode
-router.post('/request-passcode', async (req, res) => {
-    const { email } = req.body;
-
-    if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
-    }
-
-    try {
-        // Check if user exists in the database
-        const user = await Life.findOne({ where: { email } });
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        // Generate a 4-digit passcode
-        const passcode = crypto.randomInt(1000, 10000); // Random 4-digit passcode
-
-        // Set expiration time (e.g., 5 minutes from now)
-        const expirationTime = new Date();
-        expirationTime.setMinutes(expirationTime.getMinutes() + 5); // 5 minutes expiry
-
-        // Hash the passcode before storing it and save to user
-        user.passcode = await bcrypt.hash(passcode.toString(), 10);
-        user.passcodeExpiration = expirationTime;
-        await user.save();
-
-        // Send the passcode to the user's email
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: email,
-            subject: 'Your 4-Digit Passcode',
-            text: `Your 4-digit passcode is: ${passcode}`
-        };
-
-        // Send email
-        transporter.sendMail(mailOptions, (error) => {
-            if (error) {
-                return res.status(500).json({ error: 'Failed to send email' });
-            }
-            res.status(200).json({ message: 'Passcode sent to email' });
-        });
-
-    } catch (err) {
-        console.error('Error requesting passcode:', err);
-        res.status(500).json({ error: 'Failed to request passcode' });
-    }
-});
-
 router.post('/login', async (req, res) => {
-    const { email, passcode, firstName, lastName } = req.body; // Add optional fields for account claiming
+    const { email, passcode, firstName, lastName } = req.body;
 
     if (!email || !passcode) {
         return res.status(400).json({ error: 'Email and passcode are required.' });
     }
 
     try {
-        // Find user by email
-        const user = await Life.findOne({ where: { email } });
+        // Ensure email matches the column in the LifeAccount model
+        const user = await LifeAccount.findOne({
+            where: { email } // This assumes 'email' is the correct column name
+        });
+
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }

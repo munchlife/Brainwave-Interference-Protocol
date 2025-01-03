@@ -1,6 +1,6 @@
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
-const Life = require('../dataModels/life.js');
+const LifeAccount = require('../dataModels/lifeAccount.js');
 
 const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
     neuralSynchronyCohortId: {
@@ -108,7 +108,7 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: Life, // Ensures that the foreign key points to the 'Life' model.
+            model: LifeAccount, // Ensures that the foreign key points to the 'Life' model.
             key: 'lifeId',
         },
         onUpdate: 'CASCADE', // If lifeId changes, update this field accordingly.
@@ -121,7 +121,7 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
     ],
 });
 
-NeuralSynchronyCohort.belongsTo(Life, { foreignKey: 'lifeId', as: 'life' });
+NeuralSynchronyCohort.belongsTo(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
 
 NeuralSynchronyCohort.sync({ alter: true }) // Use `alter` for schema migrations
     .then(() => console.log('NeuralSynchronyCohort model synced'))

@@ -7,6 +7,7 @@ const dotenv = require('dotenv'); // Import dotenv
 const lifeRoutes = require('./routes/life');
 const neuralSynchronyCohortRoutes = require('./routes/neuralSynchronyCohort'); // Neural synchrony cohort routes
 const interferenceReceiptRoutes = require('./routes/interferenceReceipt'); // Interference receipt routes
+const schumannResonanceRoutes = require('./routes/schumannResonance');
 const authenticateToken = require('./middlewares/authenticateToken');
 
 // Load environment variables from .env file
@@ -24,6 +25,7 @@ app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use('/api/life', lifeRoutes); // Life-related routes
 app.use('/api/neuralSynchronyCohort', neuralSynchronyCohortRoutes); // Neural synchrony cohort routes
 app.use('/api/interferenceReceipt', interferenceReceiptRoutes); // Interference receipt routes
+app.use('/api/schumannResonance', schumannResonanceRoutes);
 
 // Apply the authentication middleware globally for protected routes
 app.use(authenticateToken);

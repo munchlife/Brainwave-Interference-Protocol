@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const Life = require('../dataModels/life.js'); // Life
+const LifeAccount = require('../dataModels/lifeAccount.js'); // Life
+const LifeSignal = require('../dataModels/lifeSignal.js');
+const LifeBalance = require('../dataModels/lifeBalance.js');
 const SchumannResonance = require('../dataModels/schumannResonance.js'); // Life model// model
 const authenticateToken = require('../middlewares/authenticateToken'); // Centralized middleware
 const verifyLifeId = require('../middlewares/verifyLifeId'); // Centralized middleware
@@ -8,7 +10,7 @@ const verifyLifeId = require('../middlewares/verifyLifeId'); // Centralized midd
 // GET: Get all Life records
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const lives = await Life.findAll();
+        const lives = await LifeAccount.findAll();
         return res.json(lives);
     } catch (err) {
         console.error(err);
@@ -19,7 +21,7 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET: Get a specific Life record by lifeId
 router.get('/:id', authenticateToken, async (req, res) => {
     try {
-        const life = await Life.findByPk(req.params.id);
+        const life = await LifeAccount.findByPk(req.params.id);
         if (!life) {
             return res.status(404).json({ error: 'Life not found' });
         }
@@ -30,106 +32,61 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// POST: Create a new Life record
-router.post('/create', async (req, res) => {
+// POST: Update the brainwave phase and bandpower for a Life (creates a new entry in LifeSignal table)
+router.post('/:lifeId/update-brainwave', authenticateToken, verifyLifeId, async (req, res) => {
     const {
-        email,
-        passcode,
-        firstName,
-        lastName,
-        registered,
-        interferenceDegree,
-        totalConstructiveInterference,
-        totalDestructiveInterference,
-    } = req.body;
-
-    try {
-        const newLife = await Life.create({
-            email,
-            passcode,
-            firstName,
-            lastName,
-            registered: registered || false,
-            interferenceDegree: interferenceDegree || false,
-            totalConstructiveInterference: totalConstructiveInterference || 0,
-            totalDestructiveInterference: totalDestructiveInterference || 0,
-        });
-        return res.status(201).json(newLife);
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// POST: Update the latest bandpower readings for a Life
-router.post('/:lifeId/update-bandpower', authenticateToken, verifyLifeId, async (req, res) => {
-    const {
+        phase,
         bandpowerDelta,
         bandpowerTheta,
         bandpowerAlpha,
         bandpowerBeta,
         bandpowerGamma,
-        frequencyWeightedBandpower,
+        frequencyWeightedBandpower
     } = req.body;
 
-    try {
-        const life = req.life; // Already validated by middleware
-
-        // Update the bandpower fields
-        life.bandpowerDelta = bandpowerDelta;
-        life.bandpowerTheta = bandpowerTheta;
-        life.bandpowerAlpha = bandpowerAlpha;
-        life.bandpowerBeta = bandpowerBeta;
-        life.bandpowerGamma = bandpowerGamma;
-        life.frequencyWeightedBandpower = frequencyWeightedBandpower;
-
-        // Update the timestamp to mark the change
-        life.timestamp = new Date();
-
-        // Save the updated life
-        await life.save();
-
-        res.status(200).json({ message: 'Bandpower updated successfully', life });
-    } catch (err) {
-        console.error('Error updating bandpower for life:', err);
-        res.status(500).json({ error: 'Failed to update bandpower' });
-    }
-});
-
-// POST: Update the frequency-weighted phase for each band
-router.post('/:lifeId/update-phase', authenticateToken, verifyLifeId, async (req, res) => {
-    const { phase } = req.body;  // phase should be an object with keys for each band (e.g., delta, theta, etc.)
-
-    // Ensure the phase object contains valid values for each band
+    // Validate the phase object
     const validBands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
     const phaseKeys = Object.keys(phase || {});
 
-    // Check if all keys in phase are valid bands
     const invalidBands = phaseKeys.filter(key => !validBands.includes(key));
     if (invalidBands.length > 0) {
         return res.status(400).json({ error: `Invalid phase keys: ${invalidBands.join(', ')}` });
     }
 
+    // Validate bandpower values
+    if (typeof bandpowerDelta !== 'number' || typeof bandpowerTheta !== 'number' ||
+        typeof bandpowerAlpha !== 'number' || typeof bandpowerBeta !== 'number' ||
+        typeof bandpowerGamma !== 'number' || typeof frequencyWeightedBandpower !== 'number') {
+        return res.status(400).json({ error: 'Bandpower values must be numbers' });
+    }
+
     try {
         const life = req.life; // Already validated by middleware
 
-        // Update the phase for each valid band
-        validBands.forEach(band => {
-            if (phase[band] !== undefined) {
-                life[band] = phase[band];  // Store the phase for each band
-            }
+        // Create a new LifeSignal entry in the database
+        const newLifeSignal = await LifeSignal.create({
+            lifeId: life.lifeId,
+            phaseDelta: phase.delta,
+            phaseTheta: phase.theta,
+            phaseAlpha: phase.alpha,
+            phaseBeta: phase.beta,
+            phaseGamma: phase.gamma,
+            bandpowerDelta,
+            bandpowerTheta,
+            bandpowerAlpha,
+            bandpowerBeta,
+            bandpowerGamma,
+            frequencyWeightedBandpower,
+            timestamp: new Date()
         });
 
-        // Update the timestamp to mark the change
-        life.timestamp = new Date();
-
-        // Save the updated life data
-        await life.save();
-
-        res.status(200).json({ message: 'Frequency-weighted phase updated successfully', life });
+        res.status(200).json({
+            message: 'Brainwave phase and bandpower updated successfully',
+            lifeSignal: newLifeSignal
+        });
     } catch (err) {
-        console.error('Error updating frequency-weighted phase:', err);
-        res.status(500).json({ error: 'Failed to update frequency-weighted phase' });
+        console.error('Error updating brainwave data:', err);
+        res.status(500).json({ error: 'Failed to update brainwave data' });
     }
 });
 
@@ -167,15 +124,21 @@ router.get('/:lifeId/schumann-alignment', authenticateToken, verifyLifeId, async
     const { lifeId } = req.params;
 
     try {
-        // Fetch the life record by lifeId
-        const latestPhaseData = await Life.findByPk(lifeId);
-        if (!latestPhaseData) {
+        const latestLifeSignal = await LifeSignal.findOne({
+            include: [{
+                model: LifeAccount,
+                where: { lifeId }
+            }],
+            order: [['timestamp', 'DESC']]
+        });
+
+        if (!latestLifeSignal) {
             return res.status(404).json({ error: 'No phase data found for this lifeId' });
         }
 
         // Filter the phases that are non-null
         const brainwaveBands = ['Alpha', 'Beta', 'Theta', 'Delta', 'Gamma'];
-        const validPhases = brainwaveBands.filter(band => latestPhaseData[`phase${band}`] !== null);
+        const validPhases = brainwaveBands.filter(band => latestLifeSignal[`phase${band}`] !== null);
 
         if (validPhases.length === 0) {
             return res.status(404).json({ error: 'No valid phase data found for this lifeId' });
@@ -188,13 +151,13 @@ router.get('/:lifeId/schumann-alignment', authenticateToken, verifyLifeId, async
         }
 
         // Find the closest Schumann resonance timestamp to the life’s timestamp
-        const closestSchumann = getClosestSchumannResonance(latestPhaseData.timestamp, schumannResonances);
+        const closestSchumann = getClosestSchumannResonance(latestLifeSignal.timestamp, schumannResonances);
 
         // Calculate phase differences and interference for each band
         const interferenceResults = {};
 
         validPhases.forEach(band => {
-            const bandPhase = latestPhaseData[`phase${band}`];
+            const bandPhase = latestLifeSignal[`phase${band}`];
             if (bandPhase !== null) {
                 const phaseDifference = calculatePhaseDifference(bandPhase, closestSchumann[`phase${band}`]);
                 interferenceResults[band] = {
@@ -204,19 +167,32 @@ router.get('/:lifeId/schumann-alignment', authenticateToken, verifyLifeId, async
             }
         });
 
-        // Update interference values in the latest row
-        latestPhaseData.objectiveConstructiveInterference = Object.values(interferenceResults)
+        // Determine the interference type (constructive or destructive)
+        const constructiveInterference = Object.values(interferenceResults)
             .filter(result => result.phaseDifference <= 90)
             .reduce((sum, result) => sum + result.interference, 0);
 
-        latestPhaseData.objectiveDestructiveInterference = Object.values(interferenceResults)
+        const destructiveInterference = Object.values(interferenceResults)
             .filter(result => result.phaseDifference > 90)
             .reduce((sum, result) => sum + result.interference, 0);
 
-        // Save the updated row with the latest interference values
-        await latestPhaseData.save();
+        // Log the interference in the LifeBalance table
+        const lifeBalanceEntry = await LifeBalance.create({
+            lifeId,
+            interferenceType: constructiveInterference > destructiveInterference
+                ? 'objectiveConstructiveInterference'
+                : 'objectiveDestructiveInterference',
+            interferenceValue: constructiveInterference > destructiveInterference
+                ? constructiveInterference
+                : destructiveInterference,
+            timestamp: new Date(),
+        });
 
-        res.status(200).json({ message: 'Schumann alignment calculated', results: interferenceResults });
+        res.status(200).json({
+            message: 'Schumann alignment calculated',
+            interferenceResults,
+            lifeBalanceEntry,
+        });
     } catch (err) {
         console.error('Error in Schumann alignment:', err);
         res.status(500).json({ error: 'Failed to calculate Schumann alignment' });

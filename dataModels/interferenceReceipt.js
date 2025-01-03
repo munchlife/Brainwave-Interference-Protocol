@@ -1,6 +1,6 @@
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js'); // Import your sequelize instance
-const Life = require('../dataModels/life.js'); // Import the Life model
+const LifeAccount = require('../dataModels/lifeAccount.js'); // Import the Life model
 
 // Define the InterferenceReceipt model
 const InterferenceReceipt = sequelize.define('InterferenceReceipt', {
@@ -54,7 +54,7 @@ const InterferenceReceipt = sequelize.define('InterferenceReceipt', {
 });
 
 // Define the relationship between InterferenceReceipt and Life (Association)
-InterferenceReceipt.belongsTo(Life, { foreignKey: 'lifeId' });
+InterferenceReceipt.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
 
 InterferenceReceipt.sync({ alter: true }) // Use 'alter' for schema migrations
     .then(() => console.log('InterferenceReceipt model synced'))
