@@ -107,8 +107,8 @@ function calculatePLV(phaseA, phaseB) {
     // Ensure phaseDifference is within the 0-180 degree range
     const adjustedDifference = Math.min(phaseDifference, 360 - phaseDifference);
 
-    // Normalize to a scale from 0 to 1 and directly calculate the phase-locking value in the 0-180 degree system
-    return ((180 - adjustedDifference) / 180) * 180;
+    // Return the normalized phase-locking value
+    return 180 - adjustedDifference;
 }
 
 // GET: Calculate and return pairwise or group PLVs for the Neural Synchrony Cohort
@@ -121,6 +121,7 @@ router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, a
     }
 
     try {
+        // Fetch all lives in the cohort
         const lives = await Life.findAll({
             include: [{
                 model: NeuralSynchronyCohort,
@@ -134,36 +135,89 @@ router.get('/:neuralSynchronyCohortId/phase-locking-value', authenticateToken, a
             return res.status(404).json({ message: 'Not enough checked-in lives found for this cohort.' });
         }
 
-        const pairwisePhaseLockingValues = [];
-        let totalPhaseLockingValue = 0;
+        // Define brainwave bands
+        const brainwaveBands = ['Alpha', 'Beta', 'Theta', 'Delta', 'Gamma'];
 
+        // Initialize group PLVs for each band
+        const groupPLVs = brainwaveBands.reduce((acc, band) => {
+            acc[`group${band}PhaseLockingValue`] = 0;
+            return acc;
+        }, {});
+
+        const pairwisePhaseLockingValues = [];
+        let bandwiseTotals = brainwaveBands.reduce((acc, band) => {
+            acc[band] = { total: 0, count: 0 };
+            return acc;
+        }, {});
+
+        // Pairwise calculations for each band
         for (let i = 0; i < lives.length; i++) {
             for (let j = i + 1; j < lives.length; j++) {
                 const lifeA = lives[i];
                 const lifeB = lives[j];
 
-                const phaseA = lifeA.phase;
-                const phaseB = lifeB.phase;
+                brainwaveBands.forEach(band => {
+                    const phaseA = lifeA[`phase${band}`];
+                    const phaseB = lifeB[`phase${band}`];
 
-                if (phaseA == null || phaseB == null) {
-                    continue;
-                }
+                    if (phaseA != null && phaseB != null) {
+                        const phaseLockingValue = calculatePLV(phaseA, phaseB);
 
-                // Adjust the phase locking value calculation to work with the 0-180 degree range
-                const phaseLockingValue = calculatePLV(phaseA, phaseB);
-                pairwisePhaseLockingValues.push({ pair: [lifeA.lifeId, lifeB.lifeId], phaseLockingValue });
-                totalPhaseLockingValue += phaseLockingValue;
+                        // Categorize the interference
+                        const constructiveOrDestructive =
+                            phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
+
+                        const normalizedValue = phaseLockingValue <= 90
+                            ? (90 - phaseLockingValue) / 90 // Constructive
+                            : (phaseLockingValue - 90) / 90; // Destructive
+
+                        // Log interference
+                        lifeA[constructiveOrDestructive] = normalizedValue;
+                        lifeB[constructiveOrDestructive] = normalizedValue;
+
+                        pairwisePhaseLockingValues.push({
+                            band,
+                            pair: [lifeA.lifeId, lifeB.lifeId],
+                            phaseLockingValue,
+                            normalizedValue,
+                        });
+
+                        // Update totals for group PLV calculation
+                        bandwiseTotals[band].total += phaseLockingValue;
+                        bandwiseTotals[band].count++;
+                    }
+                });
             }
         }
 
-        const groupPhaseLockingValue = pairwisePhaseLockingValues.length > 0 ? totalPhaseLockingValue / pairwisePhaseLockingValues.length : 0;
+        // Calculate group PLVs
+        brainwaveBands.forEach(band => {
+            const total = bandwiseTotals[band].total;
+            const count = bandwiseTotals[band].count;
 
+            if (count > 0) {
+                groupPLVs[`group${band}PhaseLockingValue`] = total / count;
+            }
+        });
+
+        // Save updated group PLVs to the NeuralSynchronyCohort
+        const cohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
+        if (!cohort) {
+            return res.status(404).json({ error: 'Neural Synchrony Cohort not found' });
+        }
+
+        // Update the cohort with group PLVs for each band
+        brainwaveBands.forEach(band => {
+            cohort[`group${band}PhaseLockingValue`] = groupPLVs[`group${band}PhaseLockingValue`];
+        });
+        await cohort.save();
+
+        // Respond with the calculated PLVs
         if (calculationType === 'pairwise') {
             res.status(200).json({ phaseLockingValues: pairwisePhaseLockingValues });
         } else if (calculationType === 'group') {
-            res.status(200).json({ phaseLockingValue: groupPhaseLockingValue, phaseLockingValues: pairwisePhaseLockingValues });
+            res.status(200).json({ groupPLVs, pairwisePhaseLockingValues });
         }
-
     } catch (err) {
         console.error('Error calculating PLV:', err);
         res.status(500).json({ error: 'Failed to calculate phase-locking value' });
