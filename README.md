@@ -25,6 +25,10 @@ The fundamental formula upon which the protocol is based is as follows:
 - If the brainwaves of life x are 0-90 degrees in-phase with the ionospheric or “Schumann” resonance then brainwave amplitude increase and antioxidant formation, anti-oxidative eustress, and enhanced immunity occurs.
 - Else if the brainwaves of life x are 90-180 degrees out-of-phase with the ionospheric or “Schumann” resonance then brainwave amplitude decreases and free radical formation, oxidative distress, and autoimmunity occurs.
 
+## Bandpower as an Indicator of Physiological Stress Response from Interference
+
+The Brainwave Interference Protocol makes use of bandpower measurements to prove that physiological effects are occurring in the body. Bandpower increases are expected to occur during times of phasic alignment and constructive brainwave interference between a life and the Schumann resonance or between a life and other lives and are expected to produce a eustress response in the body, whereas bandpower decreases are expected to occur during times of phasic misalignment and destructive brainwave interference between a life and the Schumann resonance or between a life and other lives and are expected to produce a distress response in the body. By associating bandpower fluctuations with interference values, the Brainwave Interference Protocol provides a way to track physiological responses in the body over time.
+
 ### Explanation of the Formula:
 **In-Phase Alignment (0-90 degrees):**
 - When an individual's brainwaves are in-phase with the Schumann resonance and within the 0-90 degrees range, constructive interference occurs. This alignment fosters a state of antioxidant formation, reducing oxidative stress and enhancing the immune system.
