@@ -101,9 +101,27 @@ function calculatePLV(phaseA, phaseB) {
     return Math.min(phaseDifference, 360 - phaseDifference); // Normalize phase difference to [0, 180]
 }
 
-router.post('/calculateInterference', async (req, res) => {
+router.post('/group-phase-locking-value', async (req, res) => {
     try {
-        const lives = await LifeAccount.findAll(); // Get all LifeAccounts
+        // Fetch the NeuralSynchronyCohort by cohortId
+        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(req.body.neuralSynchronyCohortId);
+
+        if (!neuralSynchronyCohort) {
+            return res.status(400).json({ error: 'NeuralSynchronyCohort not found' });
+        }
+
+        // Fetch the associated LifeAccounts that are checked in
+        const lifeAccounts = await LifeAccount.findAll({
+            where: {
+                neuralSynchronyCohortId: neuralSynchronyCohort.neuralSynchronyCohortId,
+                checkedIn: true  // Only fetch accounts that are checked in
+            }
+        });
+
+        if (lifeAccounts.length < 2) {
+            return res.status(400).json({ error: 'Not enough lives checked in to calculate interference' });
+        }
+
         let pairwisePhaseLockingValues = [];
         let bandwiseTotals = {
             Alpha: { total: 0, count: 0 },
@@ -113,10 +131,14 @@ router.post('/calculateInterference', async (req, res) => {
             Delta: { total: 0, count: 0 }
         };
 
-        for (let i = 0; i < lives.length; i++) {
-            for (let j = i + 1; j < lives.length; j++) {
-                const lifeA = lives[i];
-                const lifeB = lives[j];
+        let totalGroupPhaseLockingValue = 0;
+        let pairwiseCount = 0;
+
+        // Loop through pairs of lifeAccounts in the cohort
+        for (let i = 0; i < lifeAccounts.length; i++) {
+            for (let j = i + 1; j < lifeAccounts.length; j++) {
+                const lifeA = lifeAccounts[i];
+                const lifeB = lifeAccounts[j];
 
                 // Fetch the most recent LifeSignal for each life using sequelize.literal
                 const lifeASignal = await LifeSignal.findOne({
@@ -130,26 +152,17 @@ router.post('/calculateInterference', async (req, res) => {
                 });
 
                 if (lifeASignal && lifeBSignal) {
-                    // Loop through the brainwave bands you want to check
+                    // Loop through the brainwave bands to check phase-locking
                     for (const band of ['Alpha', 'Beta', 'Theta', 'Gamma', 'Delta']) {
-                        // Get the phase values for the current band
                         const phaseA = lifeASignal[`phase${band}`];
                         const phaseB = lifeBSignal[`phase${band}`];
 
                         if (phaseA != null && phaseB != null) {
-                            // Calculate the phase-locking value (PLV) for this band
                             const phaseLockingValue = calculatePLV(phaseA, phaseB);
+                            const interferenceType = phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
+                            const normalizedValue = phaseLockingValue <= 90 ? (90 - phaseLockingValue) / 90 : (phaseLockingValue - 90) / 90;
 
-                            // Categorize the interference
-                            const interferenceType =
-                                phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
-
-                            // Normalize the phase-locking value
-                            const normalizedValue = phaseLockingValue <= 90
-                                ? (90 - phaseLockingValue) / 90  // Constructive
-                                : (phaseLockingValue - 90) / 90;  // Destructive
-
-                            // Use sequelize.literal to fetch the LifeBalance record for both lives using lifeAccountId
+                            // Use sequelize.literal to fetch the LifeBalance record for both lives
                             const balanceA = await LifeBalance.findOne({
                                 where: sequelize.literal(`lifeAccountId = ${lifeA.lifeId}`)
                             });
@@ -159,16 +172,13 @@ router.post('/calculateInterference', async (req, res) => {
                             });
 
                             if (balanceA && balanceB) {
-                                // Log the interference values properly into LifeBalance
                                 balanceA[interferenceType] = (balanceA[interferenceType] || 0) + normalizedValue;
                                 balanceB[interferenceType] = (balanceB[interferenceType] || 0) + normalizedValue;
-
-                                // Save the updated balances
                                 await balanceA.save();
                                 await balanceB.save();
                             }
 
-                            // Push pairwise calculation
+                            // Log pairwise PLV for reference
                             pairwisePhaseLockingValues.push({
                                 band,
                                 pair: [lifeA.lifeId, lifeB.lifeId],
@@ -176,37 +186,25 @@ router.post('/calculateInterference', async (req, res) => {
                                 normalizedValue,
                             });
 
-                            // Update totals for group PLV calculation
+                            // Update bandwise totals
                             bandwiseTotals[band].total += phaseLockingValue;
                             bandwiseTotals[band].count++;
 
-                            // Fetch the most recent NeuralSynchronyCohort record for lifeA
-                            const neuralSynchronyCohortA = await NeuralSynchronyCohort.findOne({
-                                where: sequelize.literal(`lifeId = ${lifeA.lifeId}`),
-                                order: [['createdAt', 'DESC']],
-                            });
-
-                            if (neuralSynchronyCohortA) {
-                                // Log or update NeuralSynchronyCohort for lifeA (add more logic as needed)
-                                neuralSynchronyCohortA.phaseLockingValue = phaseLockingValue;  // Update with the new PLV
-                                await neuralSynchronyCohortA.save();
-                            }
-
-                            // Similarly, fetch and update for lifeB if necessary
-                            const neuralSynchronyCohortB = await NeuralSynchronyCohort.findOne({
-                                where: sequelize.literal(`lifeId = ${lifeB.lifeId}`),
-                                order: [['createdAt', 'DESC']],
-                            });
-
-                            if (neuralSynchronyCohortB) {
-                                neuralSynchronyCohortB.phaseLockingValue = phaseLockingValue;  // Update with the new PLV
-                                await neuralSynchronyCohortB.save();
-                            }
+                            // Aggregate phaseLockingValue for group calculation
+                            totalGroupPhaseLockingValue += phaseLockingValue;
+                            pairwiseCount++;
                         }
                     }
                 }
             }
         }
+
+        // Calculate the group phaseLockingValue by averaging the pairwise results
+        const groupPhaseLockingValue = pairwiseCount > 0 ? totalGroupPhaseLockingValue / pairwiseCount : 0;
+
+        // Update the NeuralSynchronyCohort with the calculated group phaseLockingValue
+        neuralSynchronyCohort.phaseLockingValue = groupPhaseLockingValue;
+        await neuralSynchronyCohort.save();
 
         // Calculate the average PLV for each band
         let bandwiseAverages = {};
@@ -218,7 +216,8 @@ router.post('/calculateInterference', async (req, res) => {
         // Return the results
         res.status(200).json({
             pairwisePhaseLockingValues,
-            bandwiseAverages
+            bandwiseAverages,
+            groupPhaseLockingValue  // Include the group-level PLV
         });
     } catch (err) {
         console.error('Error calculating interference:', err);
@@ -254,19 +253,12 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
         };
 
         lives.forEach(life => {
-            // Dynamically reference bandpowers using the same approach as 'phase'
-            ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'].forEach(band => {
-                const bandpower = life[`bandpower${band}`]; // Dynamically access bandpower for each band
-                if (bandpower !== undefined) {
-                    sumBandpowers[band.toLowerCase()] += bandpower; // Sum bandpowers dynamically
-                }
-            });
-
-            // Add frequency-weighted bandpower if available
-            const frequencyWeighted = life.frequencyWeightedBandpower;
-            if (frequencyWeighted !== undefined) {
-                sumBandpowers.frequencyWeighted += frequencyWeighted;
-            }
+            sumBandpowers.delta += life.bandpowerDelta || 0;
+            sumBandpowers.theta += life.bandpowerTheta || 0;
+            sumBandpowers.alpha += life.bandpowerAlpha || 0;
+            sumBandpowers.beta += life.bandpowerBeta || 0;
+            sumBandpowers.gamma += life.bandpowerGamma || 0;
+            sumBandpowers.frequencyWeighted += life.frequencyWeightedBandpower || 0;
         });
 
         const numberOfLives = lives.length;

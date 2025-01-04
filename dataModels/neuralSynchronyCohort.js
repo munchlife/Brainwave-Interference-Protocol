@@ -122,6 +122,7 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
 });
 
 NeuralSynchronyCohort.belongsTo(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
+NeuralSynchronyCohort.hasMany(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
 
 NeuralSynchronyCohort.sync({ alter: true }) // Use `alter` for schema migrations
     .then(() => console.log('NeuralSynchronyCohort model synced'))
