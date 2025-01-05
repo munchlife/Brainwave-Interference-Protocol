@@ -4,6 +4,7 @@ const bodyParser = require('body-parser'); // Middleware to parse incoming reque
 const dotenv = require('dotenv'); // Import dotenv
 
 // Import routes
+const loginRoutes = require('./routes/login');
 const lifeRoutes = require('./routes/life');
 const neuralSynchronyCohortRoutes = require('./routes/neuralSynchronyCohort'); // Neural synchrony cohort routes
 const interferenceReceiptRoutes = require('./routes/interferenceReceipt'); // Interference receipt routes
@@ -22,6 +23,7 @@ app.use(bodyParser.json()); // Parse JSON bodies
 app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Set up the routes
+app.use('/api/login', loginRoutes);
 app.use('/api/life', lifeRoutes); // Life-related routes
 app.use('/api/neuralSynchronyCohort', neuralSynchronyCohortRoutes); // Neural synchrony cohort routes
 app.use('/api/interferenceReceipt', interferenceReceiptRoutes); // Interference receipt routes
