@@ -3,7 +3,7 @@ const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 const NeuralSynchronyCohort = require('../dataModels/neuralSynchronyCohort.js');
 const InterferenceReceipt = require('../dataModels/interferenceReceipt.js');
-const LifeSignal = require('../dataModels/lifeSignal.js');
+const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
 
 // Define the LifeAccount model
 const LifeAccount = sequelize.define('LifeAccount', {
@@ -49,7 +49,7 @@ const LifeAccount = sequelize.define('LifeAccount', {
 LifeAccount.hasMany(NeuralSynchronyCohort, { foreignKey: 'lifeId' });
 LifeAccount.belongsTo(NeuralSynchronyCohort, { foreignKey: 'neuralSynchronyCohortId' });
 LifeAccount.hasMany(InterferenceReceipt, {foreignKey: 'lifeId' });
-LifeAccount.hasMany(LifeSignal, {foreignKey: 'lifeId' });
+LifeAccount.hasMany(LifeBrainwave, {foreignKey: 'lifeId' });
 
 // Sync the LifeAccount table
 LifeAccount.sync({ alter: true })

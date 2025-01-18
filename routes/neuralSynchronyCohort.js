@@ -4,7 +4,7 @@ const { Sequelize, sequelize } = require('../dataModels/database.js');
 const NeuralSynchronyCohort = require('../dataModels/neuralSynchronyCohort');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 const LifeBalance = require('../dataModels/lifeBalance.js');
-const LifeSignal = require('../dataModels/lifeSignal.js');
+const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
 const authenticateToken = require('../middlewares/authenticateToken'); // Import middleware
 
 // GET route to retrieve all cohorts for a specific lifeId
@@ -147,13 +147,13 @@ router.post('/group-phase-locking-value', async (req, res) => {
                     continue;
                 }
 
-                // Fetch the most recent LifeSignal for each life using sequelize.literal
-                const lifeASignal = await LifeSignal.findOne({
+                // Fetch the most recent LifeBrainwave for each life using sequelize.literal
+                const lifeASignal = await LifeBrainwave.findOne({
                     where: sequelize.literal(`lifeId = ${lifeA.lifeId}`),
                     order: [['timestamp', 'DESC']],
                 });
 
-                const lifeBSignal = await LifeSignal.findOne({
+                const lifeBSignal = await LifeBrainwave.findOne({
                     where: sequelize.literal(`lifeId = ${lifeB.lifeId}`),
                     order: [['timestamp', 'DESC']],
                 });
@@ -165,8 +165,9 @@ router.post('/group-phase-locking-value', async (req, res) => {
 
                         if (phaseA != null && phaseB != null) {
                             const phaseLockingValue = calculatePLV(phaseA, phaseB);
-                            const interferenceType = phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
-                            const normalizedValue = phaseLockingValue <= 90 ? (90 - phaseLockingValue) / 90 : (phaseLockingValue - 90) / 90;
+                            const isConstructive = phaseLockingValue <= 90;
+                            const interferenceType = isConstructive ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
+                            const normalizedValue = isConstructive ? (90 - phaseLockingValue) / 90 : (phaseLockingValue - 90) / 90;
 
                             // Update only the LifeBalance of the requesting user
                             const balanceToUpdate = lifeA.lifeId === lifeId ? lifeA : lifeB;

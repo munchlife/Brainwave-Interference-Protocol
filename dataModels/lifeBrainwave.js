@@ -1,11 +1,11 @@
-// lifeSignal.js
+// lifeBrainwave.js
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 const LifeAccount = require('./lifeAccount.js'); // Import LifeAccount model
 
-// Define the LifeSignal model
-const LifeSignal = sequelize.define('LifeSignal', {
-    lifeSignalId: {
+// Define the LifeBrainwave model
+const LifeBrainwave = sequelize.define('LifeBrainwave', {
+    lifeBrainwaveId: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
@@ -68,11 +68,11 @@ const LifeSignal = sequelize.define('LifeSignal', {
 });
 
 // Define relationships
-LifeSignal.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
+LifeBrainwave.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
 
-// Sync the LifeSignal table
-LifeSignal.sync({ alter: true })
-    .then(() => console.log('LifeSignal table synced'))
-    .catch(err => console.error('Error syncing LifeSignal table:', err));
+// Sync the LifeBrainwave table
+LifeBrainwave.sync({ alter: true })
+    .then(() => console.log('LifeBrainwave table synced'))
+    .catch(err => console.error('Error syncing LifeBrainwave table:', err));
 
-module.exports = LifeSignal;
+module.exports = LifeBrainwave;
