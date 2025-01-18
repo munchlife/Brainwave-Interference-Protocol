@@ -32,10 +32,46 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// POST: Update the brainwave phase and bandpower for a Life (creates a new entry in LifeBrainwave table)
-router.post('/:lifeId/update-brainwave', authenticateToken, verifyLifeId, async (req, res) => {
+// POST: Update the brainwave phase for a Life (creates a new entry in LifeBrainwave table)
+router.post('/:lifeId/update-brainwave-phase', authenticateToken, verifyLifeId, async (req, res) => {
+    const { phase } = req.body;
+
+    // Validate the phase object
+    const validBands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
+    const phaseKeys = Object.keys(phase || {});
+    const invalidBands = phaseKeys.filter(key => !validBands.includes(key));
+
+    if (invalidBands.length > 0) {
+        return res.status(400).json({ error: `Invalid phase keys: ${invalidBands.join(', ')}` });
+    }
+
+    try {
+        const life = req.life; // Already validated by middleware
+
+        // Create a new LifeBrainwave entry in the database for phase
+        const newLifeBrainwavePhase = await LifeBrainwave.create({
+            lifeId: life.lifeId,
+            phaseDelta: phase.delta,
+            phaseTheta: phase.theta,
+            phaseAlpha: phase.alpha,
+            phaseBeta: phase.beta,
+            phaseGamma: phase.gamma,
+            timestamp: new Date()
+        });
+
+        res.status(200).json({
+            message: 'Brainwave phase updated successfully',
+            lifeBrainwave: newLifeBrainwavePhase
+        });
+    } catch (err) {
+        console.error('Error updating brainwave phase:', err);
+        res.status(500).json({ error: 'Failed to update brainwave phase' });
+    }
+});
+
+// POST: Update the brainwave bandpower for a Life (creates a new entry in LifeBrainwave table)
+router.post('/:lifeId/update-brainwave-bandpower', authenticateToken, verifyLifeId, async (req, res) => {
     const {
-        phase,
         bandpowerDelta,
         bandpowerTheta,
         bandpowerAlpha,
@@ -43,15 +79,6 @@ router.post('/:lifeId/update-brainwave', authenticateToken, verifyLifeId, async 
         bandpowerGamma,
         frequencyWeightedBandpower
     } = req.body;
-
-    // Validate the phase object
-    const validBands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
-    const phaseKeys = Object.keys(phase || {});
-
-    const invalidBands = phaseKeys.filter(key => !validBands.includes(key));
-    if (invalidBands.length > 0) {
-        return res.status(400).json({ error: `Invalid phase keys: ${invalidBands.join(', ')}` });
-    }
 
     // Validate bandpower values
     if (typeof bandpowerDelta !== 'number' || typeof bandpowerTheta !== 'number' ||
@@ -63,14 +90,9 @@ router.post('/:lifeId/update-brainwave', authenticateToken, verifyLifeId, async 
     try {
         const life = req.life; // Already validated by middleware
 
-        // Create a new LifeBrainwave entry in the database
-        const newlifeBrainwave = await LifeBrainwave.create({
+        // Create a new LifeBrainwave entry in the database for bandpower
+        const newLifeBrainwaveBandpower = await LifeBrainwave.create({
             lifeId: life.lifeId,
-            phaseDelta: phase.delta,
-            phaseTheta: phase.theta,
-            phaseAlpha: phase.alpha,
-            phaseBeta: phase.beta,
-            phaseGamma: phase.gamma,
             bandpowerDelta,
             bandpowerTheta,
             bandpowerAlpha,
@@ -81,12 +103,12 @@ router.post('/:lifeId/update-brainwave', authenticateToken, verifyLifeId, async 
         });
 
         res.status(200).json({
-            message: 'Brainwave phase and bandpower updated successfully',
-            lifeBrainwave: newlifeBrainwave
+            message: 'Brainwave bandpower updated successfully',
+            lifeBrainwave: newLifeBrainwaveBandpower
         });
     } catch (err) {
-        console.error('Error updating brainwave data:', err);
-        res.status(500).json({ error: 'Failed to update brainwave data' });
+        console.error('Error updating brainwave bandpower:', err);
+        res.status(500).json({ error: 'Failed to update brainwave bandpower' });
     }
 });
 
