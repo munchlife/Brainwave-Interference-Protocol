@@ -103,8 +103,10 @@ function calculatePLV(phaseA, phaseB) {
 
 router.post('/group-phase-locking-value', async (req, res) => {
     try {
+        const { neuralSynchronyCohortId, lifeId } = req.body;
+
         // Fetch the NeuralSynchronyCohort by cohortId
-        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(req.body.neuralSynchronyCohortId);
+        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
 
         if (!neuralSynchronyCohort) {
             return res.status(400).json({ error: 'NeuralSynchronyCohort not found' });
@@ -114,7 +116,7 @@ router.post('/group-phase-locking-value', async (req, res) => {
         const lifeAccounts = await LifeAccount.findAll({
             where: {
                 neuralSynchronyCohortId: neuralSynchronyCohort.neuralSynchronyCohortId,
-                checkedIn: true  // Only fetch accounts that are checked in
+                checkedIn: true
             }
         });
 
@@ -140,19 +142,23 @@ router.post('/group-phase-locking-value', async (req, res) => {
                 const lifeA = lifeAccounts[i];
                 const lifeB = lifeAccounts[j];
 
+                // Skip pairs that do not include the requesting user's lifeId
+                if (lifeA.lifeId !== lifeId && lifeB.lifeId !== lifeId) {
+                    continue;
+                }
+
                 // Fetch the most recent LifeSignal for each life using sequelize.literal
                 const lifeASignal = await LifeSignal.findOne({
                     where: sequelize.literal(`lifeId = ${lifeA.lifeId}`),
-                    order: [['timestamp', 'DESC']],  // Get the most recent signal
+                    order: [['timestamp', 'DESC']],
                 });
 
                 const lifeBSignal = await LifeSignal.findOne({
                     where: sequelize.literal(`lifeId = ${lifeB.lifeId}`),
-                    order: [['timestamp', 'DESC']],  // Get the most recent signal
+                    order: [['timestamp', 'DESC']],
                 });
 
                 if (lifeASignal && lifeBSignal) {
-                    // Loop through the brainwave bands to check phase-locking
                     for (const band of ['Alpha', 'Beta', 'Theta', 'Gamma', 'Delta']) {
                         const phaseA = lifeASignal[`phase${band}`];
                         const phaseB = lifeBSignal[`phase${band}`];
@@ -162,20 +168,15 @@ router.post('/group-phase-locking-value', async (req, res) => {
                             const interferenceType = phaseLockingValue <= 90 ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
                             const normalizedValue = phaseLockingValue <= 90 ? (90 - phaseLockingValue) / 90 : (phaseLockingValue - 90) / 90;
 
-                            // Use sequelize.literal to fetch the LifeBalance record for both lives
-                            const balanceA = await LifeBalance.findOne({
-                                where: sequelize.literal(`lifeAccountId = ${lifeA.lifeId}`)
+                            // Update only the LifeBalance of the requesting user
+                            const balanceToUpdate = lifeA.lifeId === lifeId ? lifeA : lifeB;
+                            const balance = await LifeBalance.findOne({
+                                where: sequelize.literal(`lifeAccountId = ${balanceToUpdate.lifeId}`)
                             });
 
-                            const balanceB = await LifeBalance.findOne({
-                                where: sequelize.literal(`lifeAccountId = ${lifeB.lifeId}`)
-                            });
-
-                            if (balanceA && balanceB) {
-                                balanceA[interferenceType] = (balanceA[interferenceType] || 0) + normalizedValue;
-                                balanceB[interferenceType] = (balanceB[interferenceType] || 0) + normalizedValue;
-                                await balanceA.save();
-                                await balanceB.save();
+                            if (balance) {
+                                balance[interferenceType] = (balance[interferenceType] || 0) + normalizedValue;
+                                await balance.save();
                             }
 
                             // Log pairwise PLV for reference
@@ -217,7 +218,7 @@ router.post('/group-phase-locking-value', async (req, res) => {
         res.status(200).json({
             pairwisePhaseLockingValues,
             bandwiseAverages,
-            groupPhaseLockingValue  // Include the group-level PLV
+            groupPhaseLockingValue
         });
     } catch (err) {
         console.error('Error calculating interference:', err);
