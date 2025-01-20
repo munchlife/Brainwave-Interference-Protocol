@@ -148,26 +148,26 @@ router.post('/group-phase-locking-value', async (req, res) => {
                 }
 
                 // Fetch the most recent LifeBrainwave for each life using sequelize.literal
-                const lifeASignal = await LifeBrainwave.findOne({
+                const lifeABrainwave = await LifeBrainwave.findOne({
                     where: sequelize.literal(`lifeId = ${lifeA.lifeId}`),
                     order: [['timestamp', 'DESC']],
                 });
 
-                const lifeBSignal = await LifeBrainwave.findOne({
+                const lifeBBrainwave = await LifeBrainwave.findOne({
                     where: sequelize.literal(`lifeId = ${lifeB.lifeId}`),
                     order: [['timestamp', 'DESC']],
                 });
 
-                if (lifeASignal && lifeBSignal) {
+                if (lifeABrainwave && lifeBBrainwave) {
                     for (const band of ['Alpha', 'Beta', 'Theta', 'Gamma', 'Delta']) {
-                        const phaseA = lifeASignal[`phase${band}`];
-                        const phaseB = lifeBSignal[`phase${band}`];
+                        const phaseA = lifeABrainwave[`phase${band}`];
+                        const phaseB = lifeBBrainwave[`phase${band}`];
 
                         if (phaseA != null && phaseB != null) {
                             const phaseLockingValue = calculatePLV(phaseA, phaseB);
                             const isConstructive = phaseLockingValue <= 90;
                             const interferenceType = isConstructive ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
-                            const normalizedValue = isConstructive ? (90 - phaseLockingValue) / 90 : (phaseLockingValue - 90) / 90;
+                            const adjustedPhaseLockingValue = isConstructive ? phaseLockingValue : 180 - phaseLockingValue;
 
                             // Update only the LifeBalance of the requesting user
                             const balanceToUpdate = lifeA.lifeId === lifeId ? lifeA : lifeB;
@@ -176,7 +176,7 @@ router.post('/group-phase-locking-value', async (req, res) => {
                             });
 
                             if (balance) {
-                                balance[interferenceType] = (balance[interferenceType] || 0) + normalizedValue;
+                                balance[interferenceType] = (balance[interferenceType] || 0) + adjustedPhaseLockingValue;
                                 await balance.save();
                             }
 
@@ -185,7 +185,7 @@ router.post('/group-phase-locking-value', async (req, res) => {
                                 band,
                                 pair: [lifeA.lifeId, lifeB.lifeId],
                                 phaseLockingValue,
-                                normalizedValue,
+                                adjustedPhaseLockingValue,
                             });
 
                             // Update bandwise totals
