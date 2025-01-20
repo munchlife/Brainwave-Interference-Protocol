@@ -2,8 +2,8 @@ const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 
-const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
-    neuralSynchronyCohortId: {
+const BrainwaveAlignmentCohort = sequelize.define('BrainwaveAlignmentCohort', {
+    brainwaveAlignmentCohortId: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
@@ -121,11 +121,11 @@ const NeuralSynchronyCohort = sequelize.define('NeuralSynchronyCohort', {
     ],
 });
 
-NeuralSynchronyCohort.belongsTo(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
-NeuralSynchronyCohort.hasMany(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
+BrainwaveAlignmentCohort.belongsTo(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
+BrainwaveAlignmentCohort.hasMany(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
 
-NeuralSynchronyCohort.sync({ alter: true }) // Use `alter` for schema migrations
-    .then(() => console.log('NeuralSynchronyCohort model synced'))
-    .catch(err => console.error('Error syncing NeuralSynchronyCohort model:', err));
+BrainwaveAlignmentCohort.sync({ alter: true }) // Use `alter` for schema migrations
+    .then(() => console.log('BrainwaveAlignmentCohort model synced'))
+    .catch(err => console.error('Error syncing BrainwaveAlignmentCohort model:', err));
 
-module.exports = NeuralSynchronyCohort;
+module.exports = BrainwaveAlignmentCohort;

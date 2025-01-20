@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Sequelize, sequelize } = require('../dataModels/database.js');
-const NeuralSynchronyCohort = require('../dataModels/neuralSynchronyCohort');
+const BrainwaveAlignmentCohort = require('../dataModels/brainwaveAlignmentCohort');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 const LifeBalance = require('../dataModels/lifeBalance.js');
 const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
@@ -14,8 +14,8 @@ router.get('/:lifeId/cohorts', authenticateToken, async (req, res) => {
     try {
         const life = await LifeAccount.findByPk(lifeId, {
             include: [{
-                model: NeuralSynchronyCohort,
-                as: 'neuralSynchronyCohorts',
+                model: BrainwaveAlignmentCohort,
+                as: 'brainwaveAlignmentCohorts',
             }],
         });
 
@@ -23,7 +23,7 @@ router.get('/:lifeId/cohorts', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Life not found' });
         }
 
-        const cohorts = life.get('neuralSynchronyCohorts') || life['neuralSynchronyCohorts'];
+        const cohorts = life.get('brainwaveAlignmentCohorts') || life['brainwaveAlignmentCohorts'];
         res.status(200).json(cohorts);
     } catch (err) {
         console.error('Error retrieving cohorts for lifeId:', err);
@@ -40,7 +40,7 @@ router.post('/create', authenticateToken, async (req, res) => {
     }
 
     try {
-        const newCohort = await NeuralSynchronyCohort.create({ topic, phaseLockingValue });
+        const newCohort = await BrainwaveAlignmentCohort.create({ topic, phaseLockingValue });
 
         const lives = await LifeAccount.findAll({ where: { lifeId: lifeIds } });
 
@@ -49,7 +49,7 @@ router.post('/create', authenticateToken, async (req, res) => {
         }
 
         await Promise.all(
-            lives.map(life => life.update({ neuralSynchronyCohortId: newCohort.neuralSynchronyCohortId }))
+            lives.map(life => life.update({ brainwaveAlignmentCohortId: newCohort.brainwaveAlignmentCohortId }))
         );
 
         res.status(201).json({ message: 'Neural Synchrony Cohort created successfully', newCohort });
@@ -60,9 +60,9 @@ router.post('/create', authenticateToken, async (req, res) => {
 });
 
 // POST: Check-in a life to a Neural Synchrony Cohort
-router.post('/:neuralSynchronyCohortId/check-in', authenticateToken, async (req, res) => {
+router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, async (req, res) => {
     const { lifeId } = req.body;  // lifeId from the request body
-    const { neuralSynchronyCohortId } = req.params;  // Cohort ID from URL parameter
+    const { brainwaveAlignmentCohortId } = req.params;  // Cohort ID from URL parameter
 
     try {
         // Fetch the life details from the LifeAccount model
@@ -76,14 +76,14 @@ router.post('/:neuralSynchronyCohortId/check-in', authenticateToken, async (req,
             return res.status(400).json({ message: 'This life is already checked into a cohort' });
         }
 
-        // Fetch the cohort details from the NeuralSynchronyCohort model
-        const cohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
+        // Fetch the cohort details from the BrainwaveAlignmentCohort model
+        const cohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
         if (!cohort) {
             return res.status(404).json({ message: 'Cohort not found' });
         }
 
-        // Set the relationship between Life and NeuralSynchronyCohort
-        life.NeuralSynchronyCohortId = neuralSynchronyCohortId;  // Associate with NeuralSynchronyCohort
+        // Set the relationship between Life and BrainwaveAlignmentCohort
+        life.BrainwaveAlignmentCohortId = brainwaveAlignmentCohortId;  // Associate with BrainwaveAlignmentCohort
         life.checkedIn = true;  // Mark as checked-in
         await life.save();  // Save the updates to the LifeAccount model
 
@@ -103,19 +103,19 @@ function calculatePLV(phaseA, phaseB) {
 
 router.post('/group-phase-locking-value', async (req, res) => {
     try {
-        const { neuralSynchronyCohortId, lifeId } = req.body;
+        const { brainwaveAlignmentCohortId, lifeId } = req.body;
 
-        // Fetch the NeuralSynchronyCohort by cohortId
-        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
+        // Fetch the BrainwaveAlignmentCohort by cohortId
+        const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
 
-        if (!neuralSynchronyCohort) {
-            return res.status(400).json({ error: 'NeuralSynchronyCohort not found' });
+        if (!brainwaveAlignmentCohort) {
+            return res.status(400).json({ error: 'BrainwaveAlignmentCohort not found' });
         }
 
         // Fetch the associated LifeAccounts that are checked in
         const lifeAccounts = await LifeAccount.findAll({
             where: {
-                neuralSynchronyCohortId: neuralSynchronyCohort.neuralSynchronyCohortId,
+                brainwaveAlignmentCohortId: brainwaveAlignmentCohort.brainwaveAlignmentCohortId,
                 checkedIn: true
             }
         });
@@ -204,9 +204,9 @@ router.post('/group-phase-locking-value', async (req, res) => {
         // Calculate the group phaseLockingValue by averaging the pairwise results
         const groupPhaseLockingValue = pairwiseCount > 0 ? totalGroupPhaseLockingValue / pairwiseCount : 0;
 
-        // Update the NeuralSynchronyCohort with the calculated group phaseLockingValue
-        neuralSynchronyCohort.phaseLockingValue = groupPhaseLockingValue;
-        await neuralSynchronyCohort.save();
+        // Update the BrainwaveAlignmentCohort with the calculated group phaseLockingValue
+        brainwaveAlignmentCohort.phaseLockingValue = groupPhaseLockingValue;
+        await brainwaveAlignmentCohort.save();
 
         // Calculate the average PLV for each band
         let bandwiseAverages = {};
@@ -228,15 +228,15 @@ router.post('/group-phase-locking-value', async (req, res) => {
 });
 
 // GET endpoint to calculate and return the average bandpower for each brainwave band in the cohort
-router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async (req, res) => {
-    const { neuralSynchronyCohortId } = req.params;
+router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, async (req, res) => {
+    const { brainwaveAlignmentCohortId } = req.params;
 
     try {
         const lives = await LifeAccount.findAll({
             include: [{
-                model: NeuralSynchronyCohort,
+                model: BrainwaveAlignmentCohort,
                 required: true,
-                where: { neuralSynchronyCohortId },
+                where: { brainwaveAlignmentCohortId },
             }],
             where: { checkedIn: true },
         });
@@ -273,19 +273,19 @@ router.get('/:neuralSynchronyCohortId/group-bandpower', authenticateToken, async
             frequencyWeighted: sumBandpowers.frequencyWeighted / numberOfLives,
         };
 
-        const neuralSynchronyCohort = await NeuralSynchronyCohort.findByPk(neuralSynchronyCohortId);
-        if (!neuralSynchronyCohort) {
+        const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
+        if (!brainwaveAlignmentCohort) {
             return res.status(404).json({ message: 'Cohort not found' });
         }
 
-        neuralSynchronyCohort.groupBandpowerDelta = averages.delta;
-        neuralSynchronyCohort.groupBandpowerTheta = averages.theta;
-        neuralSynchronyCohort.groupBandpowerAlpha = averages.alpha;
-        neuralSynchronyCohort.groupBandpowerBeta = averages.beta;
-        neuralSynchronyCohort.groupBandpowerGamma = averages.gamma;
-        neuralSynchronyCohort.groupFrequencyWeightedBandpower = averages.frequencyWeighted;
+        brainwaveAlignmentCohort.groupBandpowerDelta = averages.delta;
+        brainwaveAlignmentCohort.groupBandpowerTheta = averages.theta;
+        brainwaveAlignmentCohort.groupBandpowerAlpha = averages.alpha;
+        brainwaveAlignmentCohort.groupBandpowerBeta = averages.beta;
+        brainwaveAlignmentCohort.groupBandpowerGamma = averages.gamma;
+        brainwaveAlignmentCohort.groupFrequencyWeightedBandpower = averages.frequencyWeighted;
 
-        await neuralSynchronyCohort.save();
+        await brainwaveAlignmentCohort.save();
         res.status(200).json(averages);
 
     } catch (err) {

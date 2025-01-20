@@ -6,7 +6,7 @@ const dotenv = require('dotenv'); // Import dotenv
 // Import routes
 const loginRoutes = require('./routes/login');
 const lifeRoutes = require('./routes/life');
-const neuralSynchronyCohortRoutes = require('./routes/neuralSynchronyCohort'); // Neural synchrony cohort routes
+const brainwaveAlignmentCohortRoutes = require('./routes/brainwaveAlignmentCohort'); // Neural synchrony cohort routes
 const interferenceReceiptRoutes = require('./routes/interferenceReceipt'); // Interference receipt routes
 const schumannResonanceRoutes = require('./routes/schumannResonance');
 const authenticateToken = require('./middlewares/authenticateToken');
@@ -25,7 +25,7 @@ app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
 // Set up the routes
 app.use('/api/login', loginRoutes);
 app.use('/api/life', lifeRoutes); // Life-related routes
-app.use('/api/neuralSynchronyCohort', neuralSynchronyCohortRoutes); // Neural synchrony cohort routes
+app.use('/api/brainwaveAlignmentCohort', brainwaveAlignmentCohortRoutes); // Neural synchrony cohort routes
 app.use('/api/interferenceReceipt', interferenceReceiptRoutes); // Interference receipt routes
 app.use('/api/schumannResonance', schumannResonanceRoutes);
 

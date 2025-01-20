@@ -1,7 +1,7 @@
 // lifeAccount.js
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
-const NeuralSynchronyCohort = require('../dataModels/neuralSynchronyCohort.js');
+const BrainwaveAlignmentCohort = require('../dataModels/brainwaveAlignmentCohort.js');
 const InterferenceReceipt = require('../dataModels/interferenceReceipt.js');
 const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
 
@@ -46,8 +46,8 @@ const LifeAccount = sequelize.define('LifeAccount', {
     ],
 });
 
-LifeAccount.hasMany(NeuralSynchronyCohort, { foreignKey: 'lifeId' });
-LifeAccount.belongsTo(NeuralSynchronyCohort, { foreignKey: 'neuralSynchronyCohortId' });
+LifeAccount.hasMany(BrainwaveAlignmentCohort, { foreignKey: 'lifeId' });
+LifeAccount.belongsTo(BrainwaveAlignmentCohort, { foreignKey: 'brainwaveAlignmentCohortId' });
 LifeAccount.hasMany(InterferenceReceipt, {foreignKey: 'lifeId' });
 LifeAccount.hasMany(LifeBrainwave, {foreignKey: 'lifeId' });
 
