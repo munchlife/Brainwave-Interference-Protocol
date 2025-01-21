@@ -7,7 +7,7 @@ const verifyLifeId = async (req, res, next) => {
     const { lifeId } = req.params;
 
     try {
-        const life = await Life.findByPk(lifeId);
+        const life = await LifeAccount.findByPk(lifeId);
         if (!life || life.id !== req.lifeId) {
             return res.status(403).json({ error: 'Forbidden: Token does not match Life record' });
         }
