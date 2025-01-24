@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { Sequelize, sequelize } = require('../dataModels/database.js');
+const { sequelize } = require('../dataModels/database.js');
 const BrainwaveAlignmentCohort = require('../dataModels/brainwaveAlignmentCohort');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 const LifeBalance = require('../dataModels/lifeBalance.js');
 const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
-const authenticateToken = require('../middlewares/authenticateToken'); // Import middleware
+const authenticateToken = require('../middlewares/authenticateToken');
+const verifyLifeId = require("../middlewares/verifyLifeId"); // Import middleware
 
 // GET route to retrieve all cohorts for a specific lifeId
-router.get('/:lifeId/cohorts', authenticateToken, async (req, res) => {
+router.get('/:lifeId/cohorts', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.params;
 
     try {
@@ -32,7 +33,7 @@ router.get('/:lifeId/cohorts', authenticateToken, async (req, res) => {
 });
 
 // POST: Create a new Neural Synchrony Cohort and associate lives
-router.post('/create', authenticateToken, async (req, res) => {
+router.post('/create', authenticateToken, verifyLifeId, async (req, res) => {
     const { topic, phaseLockingValue, lifeIds } = req.body;
 
     if (!topic || phaseLockingValue == null || !Array.isArray(lifeIds) || lifeIds.length === 0) {
@@ -60,7 +61,7 @@ router.post('/create', authenticateToken, async (req, res) => {
 });
 
 // POST: Check-in a life to a Neural Synchrony Cohort
-router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, async (req, res) => {
+router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.body;  // lifeId from the request body
     const { brainwaveAlignmentCohortId } = req.params;  // Cohort ID from URL parameter
 
@@ -95,13 +96,36 @@ router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, async (r
     }
 });
 
+// GET endpoint to retrieve the number of check-ins for a brainwave alignment cohort.
+router.get('/:brainwaveAlignmentCohortId/checkins', authenticateToken, verifyLifeId, async (req, res) => {
+    const { brainwaveAlignmentCohortId } = req.params;
+
+    try {
+        // Find all lives in the specified cohort with checkedIn = true
+        const checkins = await LifeAccount.findAll({
+            where: {
+                brainwaveAlignmentCohortId: brainwaveAlignmentCohortId,
+                checkedIn: true,
+            },
+        });
+
+        // Count the number of check-ins
+        const checkinCount = checkins.length;
+
+        res.status(200).json({ checkinCount });
+    } catch (error) {
+        console.error('Error fetching check-ins:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // Helper function to calculate Phase-Locking Value (PLV)
 function calculatePLV(phaseA, phaseB) {
     const phaseDifference = Math.abs(phaseA - phaseB);
     return Math.min(phaseDifference, 360 - phaseDifference); // Normalize phase difference to [0, 180]
 }
 
-router.post('/group-phase-locking-value', async (req, res) => {
+router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async (req, res) => {
     try {
         const { brainwaveAlignmentCohortId, lifeId } = req.body;
 
@@ -228,7 +252,7 @@ router.post('/group-phase-locking-value', async (req, res) => {
 });
 
 // GET endpoint to calculate and return the average bandpower for each brainwave band in the cohort
-router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, async (req, res) => {
+router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, verifyLifeId, async (req, res) => {
     const { brainwaveAlignmentCohortId } = req.params;
 
     try {

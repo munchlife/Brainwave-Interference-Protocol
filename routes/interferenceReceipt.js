@@ -3,10 +3,11 @@ const router = express.Router();
 const { sequelize } = require('../dataModels/database.js');
 const LifeAccount = require('../dataModels/lifeAccount.js'); // Import the Life model (to link with Life)
 const InterferenceReceipt = require('../dataModels/interferenceReceipt.js'); // Import the InterferenceReceipt model
-const authenticateToken = require('../middlewares/authenticateToken'); // Import the middleware
+const authenticateToken = require('../middlewares/authenticateToken');
+const verifyLifeId = require("../middlewares/verifyLifeId"); // Import the middleware
 
 // GET: Retrieve all InterferenceReceipt records for a specific lifeId
-router.get('/receipts/:lifeId', authenticateToken, async (req, res) => {
+router.get('/receipts/:lifeId', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.params;
 
     try {
@@ -35,7 +36,7 @@ router.get('/receipts/:lifeId', authenticateToken, async (req, res) => {
 });
 
 // GET: Retrieve a specific InterferenceReceipt record by ID
-router.get('/receipt/:id', authenticateToken, async (req, res) => {
+router.get('/receipt/:id', authenticateToken, verifyLifeId, async (req, res) => {
     try {
         const interferenceReceipt = await InterferenceReceipt.findByPk(req.params.id);
         if (!interferenceReceipt) {
@@ -48,7 +49,7 @@ router.get('/receipt/:id', authenticateToken, async (req, res) => {
     }
 });
 
-router.post('/create/:lifeId', authenticateToken, async (req, res) => {
+router.post('/create/:lifeId', authenticateToken, verifyLifeId, async (req, res) => {
     const {
         interferenceDegree,
         bandPowerDelta,

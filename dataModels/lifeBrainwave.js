@@ -1,4 +1,3 @@
-// lifeBrainwave.js
 const { Sequelize, DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 const LifeAccount = require('./lifeAccount.js'); // Import LifeAccount model
@@ -11,35 +10,63 @@ const LifeBrainwave = sequelize.define('LifeBrainwave', {
         autoIncrement: true,
         allowNull: false,
     },
+    rawEEGJSON: {
+        type: DataTypes.TEXT, // Stores raw EEG as a JSON string
+        allowNull: true,
+    },
+    rawEEGBinary: {
+        type: DataTypes.BLOB, // Stores raw EEG as binary data
+        allowNull: true,
+    },
     bandpowerDelta: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
     },
     bandpowerTheta: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
     },
     bandpowerAlpha: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
     },
     bandpowerBeta: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
     },
     bandpowerGamma: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
     },
     frequencyWeightedBandpower: {
         type: DataTypes.FLOAT,
-        allowNull: false,
+        allowNull: true,
         defaultValue: 0,
+    },
+    amplitudeDelta: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+    },
+    amplitudeTheta: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+    },
+    amplitudeAlpha: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+    },
+    amplitudeBeta: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+    },
+    amplitudeGamma: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
     },
     phaseDelta: {
         type: DataTypes.FLOAT,
@@ -61,10 +88,14 @@ const LifeBrainwave = sequelize.define('LifeBrainwave', {
         type: DataTypes.FLOAT,
         allowNull: true,
     },
+    frequencyWeightedPhase: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+    },
     timestamp: {
         type: DataTypes.DATE,
         allowNull: true,
-    }
+    },
 });
 
 // Define relationships
