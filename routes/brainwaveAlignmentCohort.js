@@ -149,14 +149,6 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
         }
 
         let pairwisePhaseLockingValues = [];
-        let bandwiseTotals = {
-            Alpha: { total: 0, count: 0 },
-            Beta: { total: 0, count: 0 },
-            Theta: { total: 0, count: 0 },
-            Gamma: { total: 0, count: 0 },
-            Delta: { total: 0, count: 0 }
-        };
-
         let totalGroupPhaseLockingValue = 0;
         let pairwiseCount = 0;
 
@@ -183,43 +175,36 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                 });
 
                 if (lifeABrainwave && lifeBBrainwave) {
-                    for (const band of ['Alpha', 'Beta', 'Theta', 'Gamma', 'Delta']) {
-                        const phaseA = lifeABrainwave[`phase${band}`];
-                        const phaseB = lifeBBrainwave[`phase${band}`];
+                    const phaseA = lifeABrainwave.frequencyWeightedPhase;
+                    const phaseB = lifeBBrainwave.frequencyWeightedPhase;
 
-                        if (phaseA != null && phaseB != null) {
-                            const phaseLockingValue = calculatePLV(phaseA, phaseB);
-                            const isConstructive = phaseLockingValue <= 90;
-                            const interferenceType = isConstructive ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
-                            const adjustedPhaseLockingValue = isConstructive ? phaseLockingValue : 180 - phaseLockingValue;
+                    if (phaseA != null && phaseB != null) {
+                        const phaseLockingValue = calculatePLV(phaseA, phaseB);
+                        const isConstructive = phaseLockingValue <= 90;
+                        const interferenceType = isConstructive ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
+                        const adjustedPhaseLockingValue = isConstructive ? phaseLockingValue : 180 - phaseLockingValue;
 
-                            // Update only the LifeBalance of the requesting user
-                            const balanceToUpdate = lifeA.lifeId === lifeId ? lifeA : lifeB;
-                            const balance = await LifeBalance.findOne({
-                                where: sequelize.literal(`lifeAccountId = ${balanceToUpdate.lifeId}`)
-                            });
+                        // Update only the LifeBalance of the requesting user
+                        const balanceToUpdate = lifeA.lifeId === lifeId ? lifeA : lifeB;
+                        const balance = await LifeBalance.findOne({
+                            where: sequelize.literal(`lifeAccountId = ${balanceToUpdate.lifeId}`)
+                        });
 
-                            if (balance) {
-                                balance[interferenceType] = (balance[interferenceType] || 0) + adjustedPhaseLockingValue;
-                                await balance.save();
-                            }
-
-                            // Log pairwise PLV for reference
-                            pairwisePhaseLockingValues.push({
-                                band,
-                                pair: [lifeA.lifeId, lifeB.lifeId],
-                                phaseLockingValue,
-                                adjustedPhaseLockingValue,
-                            });
-
-                            // Update bandwise totals
-                            bandwiseTotals[band].total += phaseLockingValue;
-                            bandwiseTotals[band].count++;
-
-                            // Aggregate phaseLockingValue for group calculation
-                            totalGroupPhaseLockingValue += phaseLockingValue;
-                            pairwiseCount++;
+                        if (balance) {
+                            balance[interferenceType] = (balance[interferenceType] || 0) + adjustedPhaseLockingValue;
+                            await balance.save();
                         }
+
+                        // Log pairwise PLV for reference
+                        pairwisePhaseLockingValues.push({
+                            pair: [lifeA.lifeId, lifeB.lifeId],
+                            phaseLockingValue,
+                            adjustedPhaseLockingValue,
+                        });
+
+                        // Aggregate phaseLockingValue for group calculation
+                        totalGroupPhaseLockingValue += phaseLockingValue;
+                        pairwiseCount++;
                     }
                 }
             }
@@ -232,17 +217,9 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
         brainwaveAlignmentCohort.phaseLockingValue = groupPhaseLockingValue;
         await brainwaveAlignmentCohort.save();
 
-        // Calculate the average PLV for each band
-        let bandwiseAverages = {};
-        for (const band of Object.keys(bandwiseTotals)) {
-            const { total, count } = bandwiseTotals[band];
-            bandwiseAverages[band] = count > 0 ? total / count : 0;
-        }
-
         // Return the results
         res.status(200).json({
             pairwisePhaseLockingValues,
-            bandwiseAverages,
             groupPhaseLockingValue
         });
     } catch (err) {
@@ -251,11 +228,11 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
     }
 });
 
-// GET endpoint to calculate and return the average bandpower for each brainwave band in the cohort
 router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, verifyLifeId, async (req, res) => {
     const { brainwaveAlignmentCohortId } = req.params;
 
     try {
+        // Fetch checked-in lives associated with the specified brainwave alignment cohort
         const lives = await LifeAccount.findAll({
             include: [{
                 model: BrainwaveAlignmentCohort,
@@ -265,52 +242,37 @@ router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, ve
             where: { checkedIn: true },
         });
 
-        if (!lives || lives.length === 0) {
-            return res.status(404).json({ message: 'No checked-in lives found for this cohort' });
+        // Check if there are at least 2 checked-in lives
+        if (!lives || lives.length < 2) {
+            return res.status(400).json({ message: 'At least 2 checked-in lives are required to calculate group bandpower.' });
         }
 
-        const sumBandpowers = {
-            delta: 0,
-            theta: 0,
-            alpha: 0,
-            beta: 0,
-            gamma: 0,
-            frequencyWeighted: 0,
-        };
+        // Sum of frequencyWeightedBandpower values
+        let sumFrequencyWeightedBandpower = 0;
 
+        // Iterate over lives and accumulate frequencyWeightedBandpower
         lives.forEach(life => {
-            sumBandpowers.delta += life.bandpowerDelta || 0;
-            sumBandpowers.theta += life.bandpowerTheta || 0;
-            sumBandpowers.alpha += life.bandpowerAlpha || 0;
-            sumBandpowers.beta += life.bandpowerBeta || 0;
-            sumBandpowers.gamma += life.bandpowerGamma || 0;
-            sumBandpowers.frequencyWeighted += life.frequencyWeightedBandpower || 0;
+            sumFrequencyWeightedBandpower += life.frequencyWeightedBandpower || 0;
         });
 
+        // Calculate the average frequencyWeightedBandpower
         const numberOfLives = lives.length;
-        const averages = {
-            delta: sumBandpowers.delta / numberOfLives,
-            theta: sumBandpowers.theta / numberOfLives,
-            alpha: sumBandpowers.alpha / numberOfLives,
-            beta: sumBandpowers.beta / numberOfLives,
-            gamma: sumBandpowers.gamma / numberOfLives,
-            frequencyWeighted: sumBandpowers.frequencyWeighted / numberOfLives,
-        };
+        const averageFrequencyWeightedBandpower = sumFrequencyWeightedBandpower / numberOfLives;
 
+        // Fetch the brainwave alignment cohort to update the values
         const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
         if (!brainwaveAlignmentCohort) {
             return res.status(404).json({ message: 'Cohort not found' });
         }
 
-        brainwaveAlignmentCohort.groupBandpowerDelta = averages.delta;
-        brainwaveAlignmentCohort.groupBandpowerTheta = averages.theta;
-        brainwaveAlignmentCohort.groupBandpowerAlpha = averages.alpha;
-        brainwaveAlignmentCohort.groupBandpowerBeta = averages.beta;
-        brainwaveAlignmentCohort.groupBandpowerGamma = averages.gamma;
-        brainwaveAlignmentCohort.groupFrequencyWeightedBandpower = averages.frequencyWeighted;
+        // Update the cohort with the calculated average frequencyWeightedBandpower
+        brainwaveAlignmentCohort.groupFrequencyWeightedBandpower = averageFrequencyWeightedBandpower;
 
+        // Save the updated cohort
         await brainwaveAlignmentCohort.save();
-        res.status(200).json(averages);
+
+        // Return the calculated average frequencyWeightedBandpower
+        res.status(200).json({ averageFrequencyWeightedBandpower });
 
     } catch (err) {
         console.error('Error fetching group bandpower:', err);
