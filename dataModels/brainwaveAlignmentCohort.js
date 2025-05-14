@@ -1,4 +1,4 @@
-const { Sequelize, DataTypes } = require('sequelize');
+const { DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 
@@ -142,13 +142,5 @@ const BrainwaveAlignmentCohort = sequelize.define('BrainwaveAlignmentCohort', {
         { fields: ['lifeId'] }, // Index on foreign key for fast lookups
     ],
 });
-
-BrainwaveAlignmentCohort.belongsTo(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
-BrainwaveAlignmentCohort.hasMany(LifeAccount, { foreignKey: 'lifeId', as: 'life' });
-BrainwaveAlignmentCohort.belongsTo(LifeAccount, { foreignKey: 'cohortAdminLifeId', as: 'admin' });
-
-BrainwaveAlignmentCohort.sync({ alter: true }) // Use `alter` for schema migrations
-    .then(() => console.log('BrainwaveAlignmentCohort model synced'))
-    .catch(err => console.error('Error syncing BrainwaveAlignmentCohort model:', err));
 
 module.exports = BrainwaveAlignmentCohort;

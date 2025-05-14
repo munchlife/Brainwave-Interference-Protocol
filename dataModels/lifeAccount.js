@@ -1,9 +1,6 @@
 // lifeAccount.js
-const { Sequelize, DataTypes } = require('sequelize');
+const { DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
-const BrainwaveAlignmentCohort = require('../dataModels/brainwaveAlignmentCohort.js');
-const InterferenceReceipt = require('../dataModels/interferenceReceipt.js');
-const LifeBrainwave = require('../dataModels/lifeBrainwave.js');
 
 // Define the LifeAccount model
 const LifeAccount = sequelize.define('LifeAccount', {
@@ -15,16 +12,24 @@ const LifeAccount = sequelize.define('LifeAccount', {
     },
     firstName: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
     },
     lastName: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true,
     },
     email: {
         type: DataTypes.STRING,
         allowNull: false,
         unique: true,
+    },
+    passcode: {
+        type: DataTypes.STRING, // Store as plain text or hashed, your choice
+        allowNull: true,
+    },
+    passcodeExpiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
     },
     registered: {
         type: DataTypes.BOOLEAN,
@@ -40,6 +45,11 @@ const LifeAccount = sequelize.define('LifeAccount', {
         type: DataTypes.BOOLEAN,
         defaultValue: false // Ensures non-admins are false by default
     },
+    influencerEmail: {
+        type: DataTypes.STRING, // Add influencerEmail field
+        allowNull: true, // Set to true if the field is optional
+        unique: true, // Set to false to allow multiple users with the same influencer email
+    },
     timestamp: {
         type: DataTypes.DATE,
         allowNull: true,
@@ -49,15 +59,5 @@ const LifeAccount = sequelize.define('LifeAccount', {
         { fields: ['email'], unique: true },
     ],
 });
-
-LifeAccount.hasMany(BrainwaveAlignmentCohort, { foreignKey: 'lifeId' });
-LifeAccount.belongsTo(BrainwaveAlignmentCohort, { foreignKey: 'brainwaveAlignmentCohortId' });
-LifeAccount.hasMany(InterferenceReceipt, {foreignKey: 'lifeId' });
-LifeAccount.hasMany(LifeBrainwave, {foreignKey: 'lifeId' });
-
-// Sync the LifeAccount table
-LifeAccount.sync({ alter: true })
-    .then(() => console.log('LifeAccount table synced'))
-    .catch(err => console.error('Error syncing LifeAccount table:', err));
 
 module.exports = LifeAccount;

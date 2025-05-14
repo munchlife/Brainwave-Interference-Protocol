@@ -1,4 +1,4 @@
-const { Sequelize, DataTypes } = require('sequelize');
+const { DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
 
 const SchumannResonance = sequelize.define('SchumannPhaseData', {
@@ -25,9 +25,5 @@ const SchumannResonance = sequelize.define('SchumannPhaseData', {
         { fields: ['timestamp'] }, // Index for efficient querying by timestamp
     ],
 });
-
-SchumannResonance.sync({ alter: true }) // Automatically sync the model
-    .then(() => console.log('SchumannPhaseData model synced'))
-    .catch(err => console.error('Error syncing SchumannPhaseData model:', err));
 
 module.exports = SchumannResonance;

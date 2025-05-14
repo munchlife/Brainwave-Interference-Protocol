@@ -1,40 +1,75 @@
+// app.js
 const express = require('express');
-const cors = require('cors'); // Cross-Origin Resource Sharing middleware
-const bodyParser = require('body-parser'); // Middleware to parse incoming requests
-const dotenv = require('dotenv'); // Import dotenv
+const dotenv = require('dotenv');
+const {
+    BrainwaveAlignmentCohort,
+    CohortCheckin,
+    InterferenceReceipt,
+    LifeAccount,
+    LifeBalance,
+    LifeBrainwave,
+    SchumannResonance
+} = require('./dataModels/associations.js');
 
-// Import routes
+dotenv.config();
+const app = express();
+app.use(express.json());
+
+// === Routes ===
 const loginRoutes = require('./routes/login');
 const lifeRoutes = require('./routes/life');
-const brainwaveAlignmentCohortRoutes = require('./routes/brainwaveAlignmentCohort'); // Neural synchrony cohort routes
-const interferenceReceiptRoutes = require('./routes/interferenceReceipt'); // Interference receipt routes
+const brainwaveAlignmentCohortRoutes = require('./routes/brainwaveAlignmentCohort');
+const interferenceReceiptRoutes = require('./routes/interferenceReceipt');
 const schumannResonanceRoutes = require('./routes/schumannResonance');
-const authenticateToken = require('./middlewares/authenticateToken');
+const brainwaveAnalyticsRoutes = require('./routes/brainwaveAnalytics');
 
-// Load environment variables from .env file
-dotenv.config(); // This loads the .env file variables into process.env
-
-// Initialize the app
-const app = express();
-
-// Middleware setup
-app.use(cors()); // Enable CORS for all domains (can be restricted in production)
-app.use(bodyParser.json()); // Parse JSON bodies
-app.use(bodyParser.urlencoded({ extended: true })); // Parse URL-encoded bodies
-
-// Set up the routes
+// === Register Routes ===
 app.use('/api/login', loginRoutes);
-app.use('/api/life', lifeRoutes); // Life-related routes
-app.use('/api/brainwaveAlignmentCohort', brainwaveAlignmentCohortRoutes); // Neural synchrony cohort routes
-app.use('/api/interferenceReceipt', interferenceReceiptRoutes); // Interference receipt routes
+app.use('/api/life', lifeRoutes);
+app.use('/api/brainwaveAlignmentCohort', brainwaveAlignmentCohortRoutes);
+app.use('/api/interferenceReceipt', interferenceReceiptRoutes);
 app.use('/api/schumannResonance', schumannResonanceRoutes);
+app.use('/api/brainwaveAnalytics', brainwaveAnalyticsRoutes);
 
-// Apply the authentication middleware globally for protected routes
-app.use(authenticateToken);
+// === DB Sync & Server Start ===
+async function startServer() {
+    try {
+        // Sync models in order of dependencies
+        await BrainwaveAlignmentCohort.sync({ alter: true });
+        console.log('BrainwaveAlignmentCohort table synced');
 
-// Default route for 404 handling
-app.all('*', (req, res) => {
-    res.status(404).json({ message: 'Resource not found' });
-});
+        await LifeAccount.sync({ alter: true });
+        console.log('LifeAccount table synced');
+
+        await LifeBalance.sync({ alter: true });
+        console.log('LifeBalance table synced');
+
+        await LifeBrainwave.sync({ alter: true });
+        console.log('LifeBrainwave table synced');
+
+        await InterferenceReceipt.sync({ alter: true });
+        console.log('InterferenceReceipt table synced');
+
+        await CohortCheckin.sync({ alter: true });
+        console.log('CohortCheckin table synced');
+
+        await SchumannResonance.sync({ alter: true });
+        console.log('SchumannResonance table synced');
+
+        const PORT = process.env.PORT || 3000;
+        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    } catch (err) {
+        console.error('Database sync failed:', err);
+    }
+}
+
+startServer()
+    .then(() => {
+        console.log('Server startup completed');
+    })
+    .catch(err => {
+        console.error('Failed to start server:', err);
+        process.exit(1);
+    });
 
 module.exports = app;

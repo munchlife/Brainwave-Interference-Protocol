@@ -1,7 +1,5 @@
-// lifeBalance.js
-const { Sequelize, DataTypes } = require('sequelize');
+const { DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
-const LifeAccount = require('./lifeAccount.js'); // Import LifeAccount model
 
 // Define the LifeBalance model
 const LifeBalance = sequelize.define('LifeBalance', {
@@ -10,6 +8,10 @@ const LifeBalance = sequelize.define('LifeBalance', {
         primaryKey: true,
         autoIncrement: true,
         allowNull: false,
+    },
+    influencerLifeId: {
+        type: DataTypes.INTEGER,
+        allowNull: true, // This can be null if there is no influencer
     },
     subjectiveConstructiveInterference: {
         type: DataTypes.INTEGER,
@@ -66,13 +68,5 @@ const LifeBalance = sequelize.define('LifeBalance', {
         allowNull: true,
     }
 });
-
-// Define relationships
-LifeBalance.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
-
-// Sync the LifeBalance table
-LifeBalance.sync({ alter: true })
-    .then(() => console.log('LifeBalance table synced'))
-    .catch(err => console.error('Error syncing LifeBalance table:', err));
 
 module.exports = LifeBalance;

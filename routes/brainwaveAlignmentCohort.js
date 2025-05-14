@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sequelize } = require('../dataModels/database.js');
-const { Op, literal } = require('sequelize');
+const { Op } = require('sequelize');
 const BrainwaveAlignmentCohort = require('../dataModels/brainwaveAlignmentCohort');
 const LifeAccount = require('../dataModels/lifeAccount.js');
 const LifeBalance = require('../dataModels/lifeBalance.js');
@@ -14,18 +13,10 @@ router.get('/:lifeId/cohorts', authenticateToken, verifyLifeId, async (req, res)
     const { lifeId } = req.params;
 
     try {
-        const life = await LifeAccount.findByPk(lifeId, {
-            include: [{
-                model: BrainwaveAlignmentCohort,
-                as: 'brainwaveAlignmentCohorts',
-            }],
+        const cohorts = await BrainwaveAlignmentCohort.findAll({
+            where: { lifeId },
         });
 
-        if (!life) {
-            return res.status(404).json({ message: 'Life not found' });
-        }
-
-        const cohorts = life.get('brainwaveAlignmentCohorts') || life['brainwaveAlignmentCohorts'];
         res.status(200).json(cohorts);
     } catch (err) {
         console.error('Error retrieving cohorts for lifeId:', err);
@@ -33,19 +24,16 @@ router.get('/:lifeId/cohorts', authenticateToken, verifyLifeId, async (req, res)
     }
 });
 
-const { Sequelize } = require('sequelize');
-
-
 // GET route to retrieve a specific cohort by cohortId with specific fields and associated lifeId emails
 router.get('/:lifeId/cohorts/:cohortId', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId, cohortId } = req.params;
 
     try {
         const cohort = await BrainwaveAlignmentCohort.findOne({
-            where: Sequelize.literal(`
-                brainwaveAlignmentCohortId = ${cohortId} 
-                AND lifeId = ${lifeId}
-            `),
+            where: {
+                brainwaveAlignmentCohortId: cohortId,
+                lifeId: lifeId,
+            },
             attributes: [
                 'topic',
                 'cohortConstructiveInterference',
@@ -54,8 +42,9 @@ router.get('/:lifeId/cohorts/:cohortId', authenticateToken, verifyLifeId, async 
             ],
             include: [{
                 model: LifeAccount,
-                as: 'life',
-                attributes: ['email']  // Directly include the email field
+                // Use the correct alias for the association if you have one
+                as: 'life', // or 'lives' if it's a hasMany
+                attributes: ['email']
             }]
         });
 
@@ -63,16 +52,17 @@ router.get('/:lifeId/cohorts/:cohortId', authenticateToken, verifyLifeId, async 
             return res.status(404).json({ message: 'Cohort not found' });
         }
 
-        // Collect the emails of the lifeIds attached to the cohort
-        const emails = cohort.life.map(life => life.email);
+        // If 'life' is an array (hasMany), use map. If belongsTo (single), wrap in array.
+        const emails = Array.isArray(cohort.life)
+            ? cohort.life.map(l => l.email)
+            : cohort.life ? [cohort.life.email] : [];
 
-        // Return the requested data, including emails
         res.status(200).json({
             topic: cohort.topic,
             cohortConstructiveInterference: cohort.cohortConstructiveInterference,
             cohortDestructiveInterference: cohort.cohortDestructiveInterference,
             netCohortInterference: cohort.netCohortInterferenceBalance,
-            emails: emails
+            emails
         });
     } catch (err) {
         console.error('Error retrieving cohort:', err);
@@ -121,7 +111,7 @@ router.post('/create', authenticateToken, verifyLifeId, async (req, res) => {
     }
 });
 
-// POST: Add a Life to an existing Neural Synchrony Cohort using email
+// POST: Add a Life to an existing Brainwave Alignment Cohort using email
 router.post('/add-life', authenticateToken, verifyLifeId, async (req, res) => {
     const { brainwaveAlignmentCohortId, email } = req.body;
 
@@ -130,8 +120,11 @@ router.post('/add-life', authenticateToken, verifyLifeId, async (req, res) => {
     }
 
     try {
-        // Find the cohort
-        const cohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
+        // Find the cohort using findOne
+        const cohort = await BrainwaveAlignmentCohort.findOne({
+            where: { brainwaveAlignmentCohortId }
+        });
+
         if (!cohort) {
             return res.status(404).json({ error: 'Cohort not found' });
         }
@@ -141,9 +134,9 @@ router.post('/add-life', authenticateToken, verifyLifeId, async (req, res) => {
             return res.status(403).json({ error: 'Only the cohort admin can add members' });
         }
 
-        // Find the life account using email
+        // Find the life account using email (no raw SQL)
         const life = await LifeAccount.findOne({
-            where: sequelize.literal(`email = '${email}'`), // Ensures safe query
+            where: { email }
         });
 
         if (!life) {
@@ -192,14 +185,17 @@ router.get('/search-cohorts', authenticateToken, verifyLifeId, async (req, res) 
     }
 });
 
-// POST: Check-in a life to a Neural Synchrony Cohort
+// POST: Check-in a life to a Brainwave Alignment Cohort
 router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.body;  // lifeId from the request body
     const { brainwaveAlignmentCohortId } = req.params;  // Cohort ID from URL parameter
 
     try {
-        // Fetch the life details from the LifeAccount model
-        const life = await LifeAccount.findByPk(lifeId);
+        // Fetch the life details using findOne instead of findByPk
+        const life = await LifeAccount.findOne({
+            where: { lifeId }
+        });
+
         if (!life) {
             return res.status(404).json({ message: 'Life not found' });
         }
@@ -209,8 +205,11 @@ router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, verifyLi
             return res.status(400).json({ message: 'This life is already checked into a cohort' });
         }
 
-        // Fetch the cohort details from the BrainwaveAlignmentCohort model
-        const cohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
+        // Fetch the cohort details using findOne instead of findByPk
+        const cohort = await BrainwaveAlignmentCohort.findOne({
+            where: { brainwaveAlignmentCohortId }
+        });
+
         if (!cohort) {
             return res.status(404).json({ message: 'Cohort not found' });
         }
@@ -227,7 +226,6 @@ router.post('/:brainwaveAlignmentCohortId/check-in', authenticateToken, verifyLi
         res.status(500).json({ error: 'Failed to check in life to cohort' });
     }
 });
-
 // GET endpoint to retrieve the number of check-ins for a brainwave alignment cohort.
 router.get('/:brainwaveAlignmentCohortId/checkins', authenticateToken, verifyLifeId, async (req, res) => {
     const { brainwaveAlignmentCohortId } = req.params;
@@ -262,14 +260,19 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
         const { brainwaveAlignmentCohortId, lifeId } = req.body;
 
         // Fetch the BrainwaveAlignmentCohort by cohortId
-        const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findByPk(brainwaveAlignmentCohortId);
+        const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findOne({
+            where: { brainwaveAlignmentCohortId }
+        });
         if (!brainwaveAlignmentCohort) {
             return res.status(400).json({ error: 'BrainwaveAlignmentCohort not found' });
         }
 
         // Fetch all checked-in LifeAccounts for the cohort
         const lifeAccounts = await LifeAccount.findAll({
-            where: sequelize.literal(`brainwaveAlignmentCohortId = '${brainwaveAlignmentCohortId}' AND checkedIn = TRUE`)
+            where: {
+                brainwaveAlignmentCohortId,
+                checkedIn: true
+            }
         });
 
         if (lifeAccounts.length < 2) {
@@ -278,13 +281,15 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
 
         // Fetch the requesting user's LifeAccount
         const requestingLifeAccount = await LifeAccount.findOne({
-            where: sequelize.literal(`lifeId = '${lifeId}'`)
+            where: { lifeId }
         });
         const isAdmin = requestingLifeAccount?.isAdmin || false;
 
         // Fetch all LifeBalances in one query
         const lifeBalances = await LifeBalance.findAll({
-            where: sequelize.literal(`lifeAccountId IN (${lifeAccounts.map(life => `'${life.lifeId}'`).join(',')})`)
+            where: {
+                lifeAccountId: lifeAccounts.map(life => life.lifeId)
+            }
         });
 
         // Create a Map for quick access
@@ -313,12 +318,12 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                 // Fetch most recent LifeBrainwave for both lifeA and lifeB
                 const [lifeABrainwave, lifeBBrainwave] = await Promise.all([
                     LifeBrainwave.findOne({
-                        where: sequelize.literal(`lifeId = '${lifeA.lifeId}'`),
-                        order: sequelize.literal('timestamp DESC')
+                        where: { lifeId: lifeA.lifeId },
+                        order: [['timestamp', 'DESC']]
                     }),
                     LifeBrainwave.findOne({
-                        where: sequelize.literal(`lifeId = '${lifeB.lifeId}'`),
-                        order: sequelize.literal('timestamp DESC')
+                        where: { lifeId: lifeB.lifeId },
+                        order: [['timestamp', 'DESC']]
                     })
                 ]);
 
@@ -431,7 +436,7 @@ router.get('/:brainwaveAlignmentCohortId/group-bandpower', authenticateToken, ve
     try {
         // Fetch the requesting LifeAccount to check if the user is an admin
         const requestingLifeAccount = await LifeAccount.findOne({
-            where: literal(`lifeId = ${lifeId}`)
+            where: { lifeId }  // Directly use lifeId in the where clause without sequelize.literal
         });
         const isAdmin = requestingLifeAccount?.isAdmin || false;
 

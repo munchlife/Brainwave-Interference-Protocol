@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const { sequelize } = require('../dataModels/database.js');
 const LifeAccount = require('../dataModels/lifeAccount.js'); // Import the Life model (to link with Life)
 const InterferenceReceipt = require('../dataModels/interferenceReceipt.js'); // Import the InterferenceReceipt model
 const authenticateToken = require('../middlewares/authenticateToken');
@@ -11,8 +10,10 @@ router.get('/receipts/:lifeId', authenticateToken, verifyLifeId, async (req, res
     const { lifeId } = req.params;
 
     try {
-        // Check if the lifeId exists in the Life table
-        const lifeExists = await LifeAccount.findByPk(lifeId);
+        // Check if the lifeId exists in the LifeAccount table using findOne
+        const lifeExists = await LifeAccount.findOne({
+            where: { lifeId } // Using lifeId in the where clause directly
+        });
 
         if (!lifeExists) {
             return res.status(404).json({ error: 'Life not found' });
@@ -65,8 +66,11 @@ router.post('/create/:lifeId', authenticateToken, verifyLifeId, async (req, res)
     const { lifeId } = req.params;
 
     try {
-        // Fetch Life details by lifeId
-        const life = await LifeAccount.findByPk(lifeId);
+        // Fetch Life details by lifeId using findOne
+        const life = await LifeAccount.findOne({
+            where: { lifeId } // Fetch LifeAccount using the lifeId
+        });
+
         if (!life) {
             return res.status(404).json({ error: 'Life not found' });
         }
@@ -79,7 +83,7 @@ router.post('/create/:lifeId', authenticateToken, verifyLifeId, async (req, res)
             }
 
             interferer = await LifeAccount.findOne({
-                where: sequelize.literal(`email = '${interfererEmail}'`),
+                where: { email: interfererEmail }, // Using findOne for interferer based on email
             });
 
             if (!interferer) {

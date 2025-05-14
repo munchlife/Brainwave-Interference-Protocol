@@ -1,6 +1,5 @@
-const { Sequelize, DataTypes } = require('sequelize');
+const { DataTypes } = require('sequelize');
 const sequelize = require('../dataModels/database.js');
-const LifeAccount = require('./lifeAccount.js'); // Import LifeAccount model
 
 // Define the LifeBrainwave model
 const LifeBrainwave = sequelize.define('LifeBrainwave', {
@@ -101,13 +100,5 @@ const LifeBrainwave = sequelize.define('LifeBrainwave', {
         allowNull: true,
     },
 });
-
-// Define relationships
-LifeBrainwave.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
-
-// Sync the LifeBrainwave table
-LifeBrainwave.sync({ alter: true })
-    .then(() => console.log('LifeBrainwave table synced'))
-    .catch(err => console.error('Error syncing LifeBrainwave table:', err));
 
 module.exports = LifeBrainwave;

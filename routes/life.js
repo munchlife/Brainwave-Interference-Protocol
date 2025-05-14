@@ -27,10 +27,14 @@ router.get('/', authenticateToken, async (req, res) => {
 // GET: Get a specific Life record by lifeId
 router.get('/:id', authenticateToken, async (req, res) => {
     try {
-        const life = await LifeAccount.findByPk(req.params.id);
+        const life = await LifeAccount.findOne({
+            where: { id: req.params.id }
+        });
+
         if (!life) {
             return res.status(404).json({ error: 'Life not found' });
         }
+
         return res.json(life);
     } catch (err) {
         console.error(err);
@@ -387,7 +391,7 @@ function calculateInterference(phaseDifference) {
     return 0;
 }
 
-router.get('/:lifeId/schumann-alignment', authenticateToken, verifyLifeId, async (req, res) => {
+router.get('/:lifeId/schumann-alignment-currency', authenticateToken, verifyLifeId, async (req, res) => {
     const { lifeId } = req.params;
 
     try {
