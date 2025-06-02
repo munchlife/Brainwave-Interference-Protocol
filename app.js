@@ -1,6 +1,9 @@
 // app.js
 const express = require('express');
 const dotenv = require('dotenv');
+const cors = require('cors');
+const path = require("path");
+
 const {
     BrainwaveAlignmentCohort,
     CohortCheckin,
@@ -8,12 +11,20 @@ const {
     LifeAccount,
     LifeBalance,
     LifeBrainwave,
-    SchumannResonance
+    SchumannResonance,
+    CohortMember // <-- Crucial: Import the new junction table model
 } = require('./dataModels/associations.js');
 
 dotenv.config();
 const app = express();
 app.use(express.json());
+
+app.use(cors({
+    origin: 'http://localhost:63342', // Ensure this matches your frontend origin
+    credentials: true,
+}));
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 // === Routes ===
 const loginRoutes = require('./routes/login');
@@ -22,6 +33,7 @@ const brainwaveAlignmentCohortRoutes = require('./routes/brainwaveAlignmentCohor
 const interferenceReceiptRoutes = require('./routes/interferenceReceipt');
 const schumannResonanceRoutes = require('./routes/schumannResonance');
 const brainwaveAnalyticsRoutes = require('./routes/brainwaveAnalytics');
+
 
 // === Register Routes ===
 app.use('/api/login', loginRoutes);
@@ -34,12 +46,18 @@ app.use('/api/brainwaveAnalytics', brainwaveAnalyticsRoutes);
 // === DB Sync & Server Start ===
 async function startServer() {
     try {
-        // Sync models in order of dependencies
-        await BrainwaveAlignmentCohort.sync({ alter: true });
-        console.log('BrainwaveAlignmentCohort table synced');
+        // Sync models in order of dependencies.
+        // Independent tables should be synced first, then tables that depend on them.
+        // Junction tables (like CohortMember) must be synced AFTER the tables they link (LifeAccount, BrainwaveAlignmentCohort).
 
         await LifeAccount.sync({ alter: true });
         console.log('LifeAccount table synced');
+
+        await BrainwaveAlignmentCohort.sync({ alter: true });
+        console.log('BrainwaveAlignmentCohort table synced');
+
+        await CohortMember.sync({ alter: true }); // <-- Crucial: Sync the junction table here
+        console.log('CohortMember table synced');
 
         await LifeBalance.sync({ alter: true });
         console.log('LifeBalance table synced');
@@ -49,9 +67,6 @@ async function startServer() {
 
         await InterferenceReceipt.sync({ alter: true });
         console.log('InterferenceReceipt table synced');
-
-        await CohortCheckin.sync({ alter: true });
-        console.log('CohortCheckin table synced');
 
         await SchumannResonance.sync({ alter: true });
         console.log('SchumannResonance table synced');

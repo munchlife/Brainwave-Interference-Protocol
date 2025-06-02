@@ -259,31 +259,39 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
     try {
         const { brainwaveAlignmentCohortId, lifeId } = req.body;
 
-        // Fetch the BrainwaveAlignmentCohort by cohortId
+        // Fetch the BrainwaveAlignmentCohort, including its members and their cohort-specific status
         const brainwaveAlignmentCohort = await BrainwaveAlignmentCohort.findOne({
-            where: { brainwaveAlignmentCohortId }
+            where: { brainwaveAlignmentCohortId },
+            include: [{
+                model: LifeAccount,
+                as: 'members',
+                through: {
+                    model: CohortMember,
+                    attributes: ['checkedIn', 'isAdmin'],
+                    where: { checkedIn: true }
+                }
+            }]
         });
+
         if (!brainwaveAlignmentCohort) {
+            console.log(`Error: BrainwaveAlignmentCohort with ID ${brainwaveAlignmentCohortId} not found.`);
             return res.status(400).json({ error: 'BrainwaveAlignmentCohort not found' });
         }
 
-        // Fetch all checked-in LifeAccounts for the cohort
-        const lifeAccounts = await LifeAccount.findAll({
-            where: {
-                brainwaveAlignmentCohortId,
-                checkedIn: true
-            }
-        });
+        const lifeAccounts = brainwaveAlignmentCohort.members;
 
         if (lifeAccounts.length < 2) {
+            console.log(`Not enough lives checked in (${lifeAccounts.length}) for cohort ${brainwaveAlignmentCohortId} to calculate interference.`);
             return res.status(400).json({ error: 'Not enough lives checked in to calculate interference' });
         }
 
-        // Fetch the requesting user's LifeAccount
-        const requestingLifeAccount = await LifeAccount.findOne({
-            where: { lifeId }
-        });
-        const isAdmin = requestingLifeAccount?.isAdmin || false;
+        // Determine if the requesting user is an admin for this specific cohort
+        const requestingMember = lifeAccounts.find(member => member.lifeId === lifeId);
+        if (!requestingMember) {
+            console.log(`User with ID ${lifeId} is not a checked-in member of cohort ${brainwaveAlignmentCohortId}.`);
+            return res.status(403).json({ error: 'User is not a checked-in member of this cohort.' });
+        }
+        const isAdmin = requestingMember.CohortMember.isAdmin || false; // Access isAdmin from the junction table
 
         // Fetch all LifeBalances in one query
         const lifeBalances = await LifeBalance.findAll({
@@ -312,6 +320,7 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
 
                 // If not admin, only process pairs that involve the requesting lifeId
                 if (!isAdmin && lifeA.lifeId !== lifeId && lifeB.lifeId !== lifeId) {
+                    console.log(`Skipping pair [${lifeA.lifeId}, ${lifeB.lifeId}] as user ${lifeId} is not admin and not part of the pair.`);
                     continue;
                 }
 
@@ -337,9 +346,8 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                         const interferenceType = isConstructive ? 'subjectiveConstructiveInterference' : 'subjectiveDestructiveInterference';
                         const adjustedPhaseLockingValue = isConstructive ? phaseLockingValue : 180 - phaseLockingValue;
 
-                        // Update balance for all participants if admin
+                        // Update balance for all participants if admin, otherwise only for the requesting user's balance
                         if (isAdmin) {
-                            // Update balance for both lifeA and lifeB
                             [lifeA.lifeId, lifeB.lifeId].forEach(lifeIdToUpdate => {
                                 const balanceToUpdate = balanceMap.get(lifeIdToUpdate);
                                 if (balanceToUpdate) {
@@ -349,17 +357,10 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                                         subjectiveConstructiveInterference: balanceToUpdate.subjectiveConstructiveInterference,
                                         subjectiveDestructiveInterference: balanceToUpdate.subjectiveDestructiveInterference
                                     });
-
-                                    // Update cohort balance for both constructive and destructive interference
-                                    if (isConstructive) {
-                                        constructiveCohortInterference += adjustedPhaseLockingValue;
-                                    } else {
-                                        destructiveCohortInterference += adjustedPhaseLockingValue;
-                                    }
                                 }
                             });
+                            console.log(`Admin user ${lifeId} updated balances for pair [${lifeA.lifeId}, ${lifeB.lifeId}].`);
                         } else {
-                            // Non-admin users only update their own balance
                             const balanceToUpdate = balanceMap.get(lifeA.lifeId === lifeId ? lifeA.lifeId : lifeB.lifeId);
                             if (balanceToUpdate) {
                                 balanceToUpdate[interferenceType] = (balanceToUpdate[interferenceType] || 0) + adjustedPhaseLockingValue;
@@ -368,15 +369,18 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                                     subjectiveConstructiveInterference: balanceToUpdate.subjectiveConstructiveInterference,
                                     subjectiveDestructiveInterference: balanceToUpdate.subjectiveDestructiveInterference
                                 });
-                            }
-
-                            // Update cohort balance for either constructive or destructive interference
-                            if (isConstructive) {
-                                constructiveCohortInterference += adjustedPhaseLockingValue;
-                            } else {
-                                destructiveCohortInterference += adjustedPhaseLockingValue;
+                                console.log(`Non-admin user ${lifeId} updated own balance for pair [${lifeA.lifeId}, ${lifeB.lifeId}].`);
                             }
                         }
+
+                        // Update cohort balance for all pairs, regardless of admin status
+                        if (isConstructive) {
+                            constructiveCohortInterference += adjustedPhaseLockingValue;
+                        } else {
+                            destructiveCohortInterference += adjustedPhaseLockingValue;
+                        }
+                        console.log(`Cohort interference updated for pair [${lifeA.lifeId}, ${lifeB.lifeId}]: ${isConstructive ? 'Constructive' : 'Destructive'}.`);
+
 
                         // Log pairwise PLV
                         pairwisePhaseLockingValues.push({
@@ -388,7 +392,11 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
                         // Aggregate for group calculation
                         totalGroupPhaseLockingValue += phaseLockingValue;
                         pairwiseCount++;
+                    } else {
+                        console.log(`Missing phase data for pair [${lifeA.lifeId}, ${lifeB.lifeId}].`);
                     }
+                } else {
+                    console.log(`Missing brainwave data for pair [${lifeA.lifeId}, ${lifeB.lifeId}].`);
                 }
             }
         }
@@ -398,12 +406,13 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
             await LifeBalance.bulkCreate(bulkUpdates, {
                 updateOnDuplicate: ['subjectiveConstructiveInterference', 'subjectiveDestructiveInterference']
             });
+            console.log(`Bulk updated ${bulkUpdates.length} LifeBalance records.`);
         }
 
         // Compute and save the group phaseLockingValue
         const groupPhaseLockingValue = pairwiseCount > 0 ? totalGroupPhaseLockingValue / pairwiseCount : 0;
         brainwaveAlignmentCohort.phaseLockingValue = groupPhaseLockingValue;
-        await brainwaveAlignmentCohort.save();
+        console.log(`Group Phase Locking Value calculated: ${groupPhaseLockingValue}.`);
 
         // Update cohort balance after all individual balances have been updated
         const netCohortInterference = constructiveCohortInterference - destructiveCohortInterference;
@@ -411,8 +420,9 @@ router.post('/group-phase-locking-value', authenticateToken, verifyLifeId, async
         // Save constructive and destructive balances to the cohort model
         brainwaveAlignmentCohort.constructiveCohortInterference = constructiveCohortInterference;
         brainwaveAlignmentCohort.destructiveCohortInterference = destructiveCohortInterference;
-        brainwaveAlignmentCohort.netCohortInterference = netCohortInterference;
+        brainwaveAlignmentCohort.netCohortInterferenceBalance = netCohortInterference; // Corrected field name
         await brainwaveAlignmentCohort.save();
+        console.log(`Cohort ${brainwaveAlignmentCohortId} updated with new interference values.`);
 
         // Return response
         res.status(200).json({
