@@ -1,2 +1,6 @@
 node_modules/
 .env
+# Parcel cache
+.parcel-cache/
+# Parcel build output
+/dist/
