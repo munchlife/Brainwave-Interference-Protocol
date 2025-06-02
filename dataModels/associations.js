@@ -45,7 +45,6 @@ LifeBrainwave.belongsTo(LifeAccount, { foreignKey: 'lifeId' });
 
 module.exports = {
     BrainwaveAlignmentCohort,
-    CohortCheckin,
     InterferenceReceipt,
     LifeAccount,
     LifeBalance,
