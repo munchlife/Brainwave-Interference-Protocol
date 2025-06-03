@@ -3,30 +3,34 @@
 const { Op } = require('sequelize');
 const {
     BrainwaveAlignmentCohort,
-    // CohortCheckin, // Not directly used in the miner, but listed for completeness if needed in related logic
-    // InterferenceReceipt, // Not directly used in the miner, but listed for completeness
     LifeAccount,
     LifeBalance,
     LifeBrainwave,
     SchumannResonance,
-    CohortMember // Crucial for associating members to cohorts
+    CohortMember
 } = require('./dataModels/associations.js'); // Adjust path to your associations file
 
-// --- Helper Functions (moved from previous calculators) ---
+// --- Helper Functions ---
 
 // PLV Helper
+// Note: PLV is typically a value between 0 and 1, or 0 and 360 degrees.
+// Your current calculatePLV returns a phase difference in [0, 180] degrees.
+// For true PLV, you'd typically work with complex phase vectors or cosines of differences.
+// For this implementation, we'll maintain the [0, 180] difference.
 function calculatePLV(phaseA, phaseB) {
+    // Assuming phaseA and phaseB are in degrees
     const phaseDifference = Math.abs(phaseA - phaseB);
-    return Math.min(phaseDifference, 360 - phaseDifference); // Normalize phase difference to [0, 180]
+    // Normalize phase difference to [0, 180]
+    return phaseDifference > 180 ? 360 - phaseDifference : phaseDifference;
 }
 
 // Schumann Alignment Helpers
-function getClosestSchumannResonance(lifeTimestamp, schumannResonances) {
+function getClosestSchumannResonance(targetTimestamp, schumannResonances) {
     let closestResonance = null;
     let smallestTimeDiff = Infinity;
 
     schumannResonances.forEach(resonance => {
-        const timeDiff = Math.abs(resonance.timestamp.getTime() - lifeTimestamp.getTime());
+        const timeDiff = Math.abs(resonance.timestamp.getTime() - targetTimestamp.getTime());
         if (timeDiff < smallestTimeDiff) {
             smallestTimeDiff = timeDiff;
             closestResonance = resonance;
@@ -36,15 +40,21 @@ function getClosestSchumannResonance(lifeTimestamp, schumannResonances) {
 }
 
 function calculatePhaseDifference(lifePhase, schumannPhase) {
-    const phaseDiff = Math.abs(lifePhase - schumannPhase);
-    return phaseDiff > 180 ? 360 - phaseDiff : phaseDiff; // Ensure the phase difference is between 0-180 degrees
+    // Both phases should be in degrees for consistency with other helpers
+    if (lifePhase === null || schumannPhase === null) return null; // Handle nulls gracefully
+
+    let phaseDiff = Math.abs(lifePhase - schumannPhase);
+    // Ensure the phase difference is between 0-180 degrees
+    return phaseDiff > 180 ? 360 - phaseDiff : phaseDiff;
 }
 
 function calculateInterferenceStrength(phaseDifference) {
+    if (phaseDifference === null) return 0; // Handle null input
+
     if (phaseDifference <= 90) {
-        return (90 - phaseDifference) / 90; // Constructive interference (0-1 range)
+        return (90 - phaseDifference) / 90; // Constructive interference (1 to 0 range)
     } else if (phaseDifference <= 180) {
-        return (phaseDifference - 90) / 90; // Destructive interference (0-1 range)
+        return (phaseDifference - 90) / 90; // Destructive interference (0 to 1 range)
     }
     return 0; // Should not happen with 0-180 input
 }
@@ -52,19 +62,21 @@ function calculateInterferenceStrength(phaseDifference) {
 // --- Main Miner Functions ---
 
 /**
- * Calculates and stores group and pairwise PLVs for active cohorts.
- * This function is intended to be called by a scheduled cron job.
+ * Calculates and stores group and pairwise PLVs for active cohorts within a specific global epoch.
+ * @param {Date} epochStartTime - The start timestamp of the global epoch (UTC).
+ * @param {Date} epochEndTime - The end timestamp of the global epoch (UTC).
  */
-async function calculateAndStorePLVsForCohort() {
+async function calculateAndStorePLVsForCohort(epochStartTime, epochEndTime) {
     try {
-        // Fetch all cohorts that are marked as 'active' and have checked-in members
+        console.log(`[PLV Miner] Processing epoch: ${epochStartTime.toISOString()} to ${epochEndTime.toISOString()}`);
+
         const activeCohorts = await BrainwaveAlignmentCohort.findAll({
-            where: { isActive: true }, // Assuming you add an 'isActive' boolean column to Cohort
+            where: { isActive: true },
             include: [{
                 model: LifeAccount,
-                as: 'members', // Make sure this alias matches your association definition
+                as: 'members',
                 through: {
-                    model: CohortMember, // The junction table
+                    model: CohortMember,
                     attributes: ['checkedIn'],
                     where: { checkedIn: true }
                 }
@@ -75,164 +87,247 @@ async function calculateAndStorePLVsForCohort() {
             const lifeAccounts = cohort.members;
 
             if (lifeAccounts.length < 2) {
-                // console.log(`Not enough lives checked in (${lifeAccounts.length}) for cohort ${cohort.brainwaveAlignmentCohortId} to calculate PLV.`);
+                console.log(`[PLV Miner] Not enough lives checked in (${lifeAccounts.length}) for cohort ${cohort.brainwaveAlignmentCohortId}.`);
                 continue;
             }
 
-            // Fetch latest brainwave data for all members in the current cohort
-            // Get data from a recent time window (e.g., last 2 minutes)
-            const recentBrainwaves = await LifeBrainwave.findAll({
+            // Fetch ALL brainwave data for this cohort within the current epoch
+            const epochBrainwaves = await LifeBrainwave.findAll({
                 where: {
                     lifeId: { [Op.in]: lifeAccounts.map(life => life.lifeId) },
-                    timestamp: { [Op.gte]: new Date(Date.now() - 2 * 60 * 1000) } // Data from last 2 minutes
+                    timestamp: { // Ensure timestamp is within the defined epoch
+                        [Op.gte]: epochStartTime,
+                        [Op.lt]: epochEndTime
+                    }
                 },
-                order: [['timestamp', 'DESC']], // Get most recent first
+                order: [['timestamp', 'ASC']], // Order for consistency if aggregating
             });
 
-            // Aggregate latest brainwave data by lifeId and channel
-            const latestBrainwaveMap = new Map(); // Map: lifeId -> Map: channel -> LifeBrainwave
-            for (const bw of recentBrainwaves) {
-                if (!latestBrainwaveMap.has(bw.lifeId)) {
-                    latestBrainwaveMap.set(bw.lifeId, new Map());
+            // Aggregate phases by lifeId, channel, and band within the epoch
+            // Map: lifeId -> Map: channel -> Map: band -> Array<phaseValues>
+            const aggregatedPhasesForEpoch = new Map();
+            for (const bw of epochBrainwaves) {
+                if (!aggregatedPhasesForEpoch.has(bw.lifeId)) {
+                    aggregatedPhasesForEpoch.set(bw.lifeId, new Map());
                 }
-                // Only store the latest entry for each channel within the time window
-                if (!latestBrainwaveMap.get(bw.lifeId).has(bw.channel) || bw.timestamp > latestBrainwaveMap.get(bw.lifeId).get(bw.channel).timestamp) {
-                    latestBrainwaveMap.get(bw.lifeId).set(bw.channel, bw);
+                const lifeMap = aggregatedPhasesForEpoch.get(bw.lifeId);
+
+                if (!lifeMap.has(bw.channel)) {
+                    lifeMap.set(bw.channel, new Map());
+                }
+                const channelMap = lifeMap.get(bw.channel);
+
+                // Add phases for each band (ensure they are not null)
+                ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'].forEach(band => {
+                    const phaseKey = `phase${band}`;
+                    const phaseValue = bw[phaseKey];
+                    if (phaseValue != null) {
+                        if (!channelMap.has(band)) channelMap.set(band, []);
+                        channelMap.get(band).push(phaseValue);
+                    }
+                });
+            }
+
+            // Now, compute the single representative phase for each lifeId/channel/band for this epoch
+            // Map: lifeId -> Map: channel -> Map: band -> circularMeanPhase
+            const representativePhases = new Map();
+            for (const [lifeId, lifeData] of aggregatedPhasesForEpoch.entries()) {
+                const currentLifeRepPhases = new Map();
+                for (const [channel, channelData] of lifeData.entries()) {
+                    const currentChannelRepPhases = new Map();
+                    for (const [band, phasesArray] of channelData.entries()) {
+                        const circularMean = getCircularMeanAngle(phasesArray);
+                        if (circularMean !== null) { // Only store if a valid mean was calculated
+                            currentChannelRepPhases.set(band, circularMean);
+                        }
+                    }
+                    if (currentChannelRepPhases.size > 0) {
+                        currentLifeRepPhases.set(channel, currentChannelRepPhases);
+                    }
+                }
+                if (currentLifeRepPhases.size > 0) {
+                    representativePhases.set(lifeId, currentLifeRepPhases);
                 }
             }
 
-            let totalGroupPhaseLockingValue = 0;
+            let totalGroupPhaseLockingValue = 0; // Sum of pairwise PLVs
             let pairwiseCount = 0;
             let cohortConstructiveInterference = 0;
             let cohortDestructiveInterference = 0;
 
-            // Loop through all unique pairs of life accounts
+            // Loop through all unique pairs of life accounts (using the original cohort members)
             for (let i = 0; i < lifeAccounts.length; i++) {
                 for (let j = i + 1; j < lifeAccounts.length; j++) {
                     const lifeA = lifeAccounts[i];
                     const lifeB = lifeAccounts[j];
 
-                    // --- Decide which channel and phase band to compare ---
-                    // For truly hardware-agnostic PLV, you might compare all available channels
-                    // and average their PLVs, or focus on a canonical set (if the client maps them).
-                    // For simplicity, let's assume we pick a default channel (e.g., the first one available)
-                    // and a specific phase band like 'alpha'.
-                    // In a real scenario, you'd likely define which channels for a cohort to monitor.
-
-                    const channelsA = latestBrainwaveMap.get(lifeA.lifeId);
-                    const channelsB = latestBrainwaveMap.get(lifeB.lifeId);
+                    const channelsA = representativePhases.get(lifeA.lifeId);
+                    const channelsB = representativePhases.get(lifeB.lifeId);
 
                     if (!channelsA || !channelsB) {
-                        // console.log(`Skipping PLV for pair [${lifeA.lifeId}, ${lifeB.lifeId}]: missing recent brainwave data.`);
+                        // console.log(`[PLV Miner] Skipping pair [${lifeA.lifeId}, ${lifeB.lifeId}]: missing representative phase data for epoch.`);
                         continue;
                     }
 
-                    // Iterate over available channels (e.g., all 4 from Muse)
-                    for (const channelAId of channelsA.keys()) {
-                        const brainwaveA_channel = channelsA.get(channelAId);
-                        const brainwaveB_channel = channelsB.get(channelAId); // Compare homologous channel
+                    // Iterate over available channels (e.g., 'AF7', 'AF8')
+                    // For PLV, typically you pick a specific channel or average across relevant ones.
+                    // Let's iterate through common channels.
+                    const commonChannels = Array.from(channelsA.keys()).filter(key => channelsB.has(key));
 
-                        if (brainwaveA_channel && brainwaveB_channel &&
-                            brainwaveA_channel.phaseAlpha != null && brainwaveB_channel.phaseAlpha != null) { // Using phaseAlpha for example
+                    for (const channelId of commonChannels) {
+                        const bandNames = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']; // Iterate all bands
+                        for (const band of bandNames) {
+                            const phaseA = channelsA.get(channelId).get(band);
+                            const phaseB = channelsB.get(channelId).get(band);
 
-                            const phaseA = brainwaveA_channel.phaseAlpha;
-                            const phaseB = brainwaveB_channel.phaseAlpha;
+                            if (phaseA != null && phaseB != null) {
+                                const phaseLockingValue = calculatePLV(phaseA, phaseB); // In [0, 180]
+                                const isConstructive = phaseLockingValue <= 90;
+                                // Interference strength ranges from 0 (at 90 deg diff) to 1 (at 0 or 180 deg diff)
+                                const interferenceStrength = calculateInterferenceStrength(phaseLockingValue);
 
-                            const phaseLockingValue = calculatePLV(phaseA, phaseB); // In [0, 180]
-                            const isConstructive = phaseLockingValue <= 90;
-                            const adjustedPhaseLockingValue = isConstructive ? phaseLockingValue : 180 - phaseLockingValue; // Distance from 90
+                                if (isConstructive) {
+                                    cohortConstructiveInterference += interferenceStrength;
+                                } else {
+                                    cohortDestructiveInterference += interferenceStrength;
+                                }
 
-                            if (isConstructive) {
-                                cohortConstructiveInterference += adjustedPhaseLockingValue;
-                            } else {
-                                cohortDestructiveInterference += adjustedPhaseLockingValue;
+                                totalGroupPhaseLockingValue += phaseLockingValue; // Summing the 0-180 deg differences
+                                pairwiseCount++;
                             }
-
-                            totalGroupPhaseLockingValue += phaseLockingValue;
-                            pairwiseCount++;
                         }
                     }
                 }
             }
 
+            // Average the total phase locking value (average difference in degrees)
             const groupPhaseLockingValue = pairwiseCount > 0 ? totalGroupPhaseLockingValue / pairwiseCount : 0;
+            // Net interference is the sum of constructive strengths minus destructive strengths
             const netCohortInterference = cohortConstructiveInterference - cohortDestructiveInterference;
+
 
             // Update the cohort's overall PLV and interference metrics
             await cohort.update({
-                phaseLockingValue: groupPhaseLockingValue,
+                phaseLockingValue: groupPhaseLockingValue, // Average pairwise phase difference (0-180 deg)
                 constructiveCohortInterference: cohortConstructiveInterference,
                 destructiveCohortInterference: cohortDestructiveInterference,
                 netCohortInterferenceBalance: netCohortInterference,
-                lastCalculatedAt: new Date(),
+                lastCalculatedAt: new Date(), // Update timestamp
             });
-            console.log(`Updated cohort ${cohort.brainwaveAlignmentCohortId} PLV: ${groupPhaseLockingValue.toFixed(2)}, Net Interference: ${netCohortInterference.toFixed(2)}`);
+            console.log(`[PLV Miner] Updated cohort ${cohort.brainwaveAlignmentCohortId}. Avg PLV (diff): ${groupPhaseLockingValue.toFixed(2)} deg, Net Interference: ${netCohortInterference.toFixed(2)}`);
         }
     } catch (err) {
-        console.error('Error in scheduled PLV calculation:', err);
+        console.error('[PLV Miner] Error in scheduled PLV calculation:', err);
     }
 }
 
 /**
- * Calculates and stores brainwave-to-Schumann resonance alignment for active users.
- * This function is intended to be called by a scheduled cron job.
+ * Calculates and stores brainwave-to-Schumann resonance alignment for active users within a specific global epoch.
+ * @param {Date} epochStartTime - The start timestamp of the global epoch (UTC).
+ * @param {Date} epochEndTime - The end timestamp of the global epoch (UTC).
  */
-async function calculateAndStoreSchumannAlignment() {
+async function calculateAndStoreSchumannAlignment(epochStartTime, epochEndTime) {
     try {
+        console.log(`[Schumann Miner] Processing epoch: ${epochStartTime.toISOString()} to ${epochEndTime.toISOString()}`);
+
         const activeLives = await LifeAccount.findAll({
-            where: { isSchumannActive: true } // Assuming you add an 'isSchumannActive' flag to LifeAccount
+            where: { isSchumannActive: true }
         });
 
         if (activeLives.length === 0) {
-            // console.log('No active lives for Schumann alignment.');
+            console.log('[Schumann Miner] No active lives for Schumann alignment.');
             return;
         }
 
-        // Fetch Schumann resonance data (e.g., from the last few hours or days)
+        // Fetch Schumann resonance data that falls within or is very close to the current epoch
         const schumannResonances = await SchumannResonance.findAll({
+            where: {
+                timestamp: {
+                    [Op.gte]: new Date(epochStartTime.getTime() - 5000), // Look 5s before epoch for closest match
+                    [Op.lt]: new Date(epochEndTime.getTime() + 5000)    // Look 5s after epoch for closest match
+                }
+            },
             order: [['timestamp', 'DESC']],
-            limit: 100 // Fetch a reasonable number of recent entries
+            limit: 20 // Fetch a reasonable number of recent entries around the epoch
         });
 
         if (!schumannResonances.length) {
-            console.warn('No Schumann resonance data found to compare with.');
+            console.warn('[Schumann Miner] No Schumann resonance data found around the epoch to compare with.');
             return;
         }
 
+        // Fetch all relevant brainwave data for active lives within the current epoch
+        const epochBrainwaves = await LifeBrainwave.findAll({
+            where: {
+                lifeId: { [Op.in]: activeLives.map(life => life.lifeId) },
+                timestamp: {
+                    [Op.gte]: epochStartTime,
+                    [Op.lt]: epochEndTime
+                }
+            },
+            order: [['timestamp', 'ASC']],
+        });
+
+        // Aggregate phases by lifeId, channel, and band within the epoch
+        // Map: lifeId -> Map: channel -> Map: band -> Array<phaseValues>
+        const aggregatedLifePhases = new Map();
+        for (const bw of epochBrainwaves) {
+            if (!aggregatedLifePhases.has(bw.lifeId)) {
+                aggregatedLifePhases.set(bw.lifeId, new Map());
+            }
+            const lifeMap = aggregatedLifePhases.get(bw.lifeId);
+
+            if (!lifeMap.has(bw.channel)) {
+                lifeMap.set(bw.channel, new Map());
+            }
+            const channelMap = lifeMap.get(bw.channel);
+
+            ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'].forEach(band => {
+                const phaseKey = `phase${band}`;
+                const phaseValue = bw[phaseKey];
+                if (phaseValue != null) {
+                    if (!channelMap.has(band)) channelMap.set(band, []);
+                    channelMap.get(band).push(phaseValue);
+                }
+            });
+        }
+
         for (const life of activeLives) {
-            // Fetch the latest processed brainwave data for this life,
-            // (e.g., from the last 2 minutes). We might need to aggregate across channels
-            // if we want a single brainwave phase for comparison.
-            const latestLifeBrainwaves = await LifeBrainwave.findAll({
-                where: {
-                    lifeId: life.lifeId,
-                    timestamp: { [Op.gte]: new Date(Date.now() - 2 * 60 * 1000) } // Data from last 2 minutes
-                },
-                order: [['timestamp', 'DESC']],
-                limit: 10 // Get latest for all channels, plus maybe a few seconds
+            const lifePhases = aggregatedLifePhases.get(life.lifeId);
+
+            if (!lifePhases || lifePhases.size === 0) {
+                console.log(`[Schumann Miner] No recent brainwave data found for life ${life.lifeId} for Schumann alignment in this epoch.`);
+                continue;
+            }
+
+            // For Schumann alignment, we need an *overall* brainwave phase for each band.
+            // A simple approach is to average phases across all available channels for each band.
+            const representativeBrainwavePhases = new Map(); // Map<band, circularMeanPhase>
+            ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'].forEach(band => {
+                const allChannelPhasesForBand = [];
+                for (const channelData of lifePhases.values()) { // Iterate through Map<channel, Map<band, phases>>
+                    const phases = channelData.get(band);
+                    if (phases && phases.length > 0) {
+                        allChannelPhasesForBand.push(...phases);
+                    }
+                }
+                const overallCircularMean = getCircularMeanAngle(allChannelPhasesForBand);
+                if (overallCircularMean !== null) {
+                    representativeBrainwavePhases.set(band, overallCircularMean);
+                }
             });
 
-            if (latestLifeBrainwaves.length === 0) {
-                // console.log(`No recent brainwave data found for life ${life.lifeId} for Schumann alignment.`);
+            if (representativeBrainwavePhases.size === 0) {
+                console.log(`[Schumann Miner] No valid representative brainwave phases for life ${life.lifeId} in this epoch.`);
                 continue;
             }
 
-            // To get a single "overall" brainwave phase for Schumann alignment,
-            // you might average phases across all channels for the latest time point.
-            // For simplicity, let's just take the most recent individual brainwave entry
-            // and assume its 'frequencyWeightedPhase' (if implemented circularly) or 'phaseAlpha' is representative.
-            // A more robust approach would be to average phases from all channels.
-            const representativeBrainwave = latestLifeBrainwaves[0]; // Take the absolute latest entry for any channel
-
-            if (!representativeBrainwave) {
-                console.warn(`No representative brainwave data for life ${life.lifeId}.`);
-                continue;
-            }
-
-            const closestSchumann = getClosestSchumannResonance(representativeBrainwave.timestamp, schumannResonances);
+            // Use the *center* of the epoch to find the closest Schumann resonance reading
+            const epochCenterTime = new Date(epochStartTime.getTime() + (epochEndTime.getTime() - epochStartTime.getTime()) / 2);
+            const closestSchumann = getClosestSchumannResonance(epochCenterTime, schumannResonances);
 
             if (!closestSchumann) {
-                console.warn(`No close Schumann resonance data for timestamp ${representativeBrainwave.timestamp.toISOString()}`);
+                console.warn(`[Schumann Miner] No close Schumann resonance data found for epoch center ${epochCenterTime.toISOString()}`);
                 continue;
             }
 
@@ -240,23 +335,29 @@ async function calculateAndStoreSchumannAlignment() {
             let destructiveInterferenceSum = 0;
             let totalWeight = 0;
 
-            const brainwaveBands = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma']; // Match Schumann fields
+            const brainwaveBands = ['Delta', 'Theta', 'Alpha', 'Beta', 'Gamma'];
 
             brainwaveBands.forEach(band => {
-                const lifePhase = representativeBrainwave[`phase${band}`];
-                const schumannPhase = closestSchumann[`phase${band}`];
+                const lifePhase = representativeBrainwavePhases.get(band);
+                const schumannPhase = closestSchumann[`phase${band}`]; // Schumann has direct fields
 
                 if (lifePhase != null && schumannPhase != null) {
                     const phaseDifference = calculatePhaseDifference(lifePhase, schumannPhase);
                     const interferenceStrength = calculateInterferenceStrength(phaseDifference);
 
-                    const bandPower = representativeBrainwave[`bandpower${band}`] || 1; // Use bandpower as weight
-                    totalWeight += bandPower;
+                    // For weighting, we'll try to use the *aggregated* bandpower for this life and epoch
+                    // This requires a bit more aggregation logic, or we can use a simpler default weight.
+                    // For simplicity here, let's just use 1 as a weight, or you could query for an aggregated
+                    // bandpower for this life from LifeBrainwave records in this epoch.
+                    // A proper weighting would be to sum bandpowers across channels for this band for this life in this epoch.
+                    // For now, let's just count.
+                    const bandWeight = 1; // Or implement aggregated bandpower weighting if desired.
+                    totalWeight += bandWeight;
 
-                    if (phaseDifference <= 90) { // Constructive
-                        constructiveInterferenceSum += interferenceStrength * bandPower;
-                    } else { // Destructive
-                        destructiveInterferenceSum += interferenceStrength * bandPower;
+                    if (phaseDifference <= 90) { // Constructive (phaseDiff 0-90 degrees)
+                        constructiveInterferenceSum += interferenceStrength * bandWeight;
+                    } else { // Destructive (phaseDiff 90-180 degrees)
+                        destructiveInterferenceSum += interferenceStrength * bandWeight;
                     }
                 }
             });
@@ -265,37 +366,38 @@ async function calculateAndStoreSchumannAlignment() {
             const normalizedDestructive = totalWeight > 0 ? destructiveInterferenceSum / totalWeight : 0;
             const netObjectiveInterference = normalizedConstructive - normalizedDestructive;
 
-            // Update LifeBalance
-            await LifeBalance.create({ // Or update if an entry for this timestamp/user already exists
+            // Update LifeBalance. It's often better to create a new entry for each epoch calculation
+            // to maintain a historical record of alignment scores.
+            await LifeBalance.create({
                 lifeId: life.lifeId,
                 objectiveConstructiveInterference: normalizedConstructive,
                 objectiveDestructiveInterference: normalizedDestructive,
                 objectiveNetInterferenceBalance: netObjectiveInterference,
-                timestamp: new Date(),
+                timestamp: epochEndTime, // Use the epoch end time as the timestamp for this calculation
             });
-            console.log(`Updated Schumann alignment for life ${life.lifeId}. Net Interference: ${netObjectiveInterference.toFixed(2)}`);
+            console.log(`[Schumann Miner] Updated Schumann alignment for life ${life.lifeId}. Net Interference: ${netObjectiveInterference.toFixed(2)}`);
         }
     } catch (err) {
-        console.error('Error in scheduled Schumann alignment calculation:', err);
+        console.error('[Schumann Miner] Error in scheduled Schumann alignment calculation:', err);
     }
 }
 
 /**
  * Calculates and stores group frequency weighted bandpower for active cohorts.
- * This function is intended to be called by a scheduled cron job.
- * This assumes 'frequencyWeightedBandpower' is a direct field on the LifeAccount model.
+ * This function currently aggregates over a 2-minute window.
+ * If you want this to also be epoch-aligned, you would modify it similarly to the PLV function.
  */
 async function calculateAndStoreGroupBandpowerForCohorts() {
     try {
         const activeCohorts = await BrainwaveAlignmentCohort.findAll({
-            where: { isActive: true }, // Filter for active cohorts
+            where: { isActive: true },
             include: [{
                 model: LifeAccount,
-                as: 'members', // Ensure this alias matches your association definition
+                as: 'members',
                 through: {
-                    model: CohortMember, // The junction table
+                    model: CohortMember,
                     attributes: ['checkedIn'],
-                    where: { checkedIn: true } // Only include checked-in members
+                    where: { checkedIn: true }
                 }
             }]
         });
@@ -304,34 +406,85 @@ async function calculateAndStoreGroupBandpowerForCohorts() {
             const checkedInLives = cohort.members;
 
             if (checkedInLives.length < 2) {
-                console.log(`Not enough checked-in lives (${checkedInLives.length}) for cohort ${cohort.brainwaveAlignmentCohortId} to calculate group bandpower.`);
+                console.log(`[Group Bandpower Miner] Not enough checked-in lives (${checkedInLives.length}) for cohort ${cohort.brainwaveAlignmentCohortId}.`);
                 continue;
             }
 
-            let sumFrequencyWeightedBandpower = 0;
-            checkedInLives.forEach(life => {
-                // Ensure life.frequencyWeightedBandpower exists and is a number
-                sumFrequencyWeightedBandpower += life.frequencyWeightedBandpower || 0;
+            // Fetch latest brainwave data for all members in the current cohort
+            // This part still uses a relative window. If you want it epoch-aligned, pass epochStart/End
+            const recentBrainwaves = await LifeBrainwave.findAll({
+                where: {
+                    lifeId: { [Op.in]: checkedInLives.map(life => life.lifeId) },
+                    timestamp: { [Op.gte]: new Date(Date.now() - 2 * 60 * 1000) } // Data from last 2 minutes
+                },
+                order: [['timestamp', 'DESC']],
             });
 
-            const numberOfLives = checkedInLives.length;
-            const averageFrequencyWeightedBandpower = sumFrequencyWeightedBandpower / numberOfLives;
+            // Aggregate frequencyWeightedBandpower by lifeId
+            const aggregatedFwbp = new Map(); // Map: lifeId -> Array<fwbpValues>
+            for (const bw of recentBrainwaves) {
+                if (bw.frequencyWeightedBandpower != null) {
+                    if (!aggregatedFwbp.has(bw.lifeId)) {
+                        aggregatedFwbp.set(bw.lifeId, []);
+                    }
+                    aggregatedFwbp.get(bw.lifeId).push(bw.frequencyWeightedBandpower);
+                }
+            }
 
-            // Update the cohort directly with the calculated average
+            let sumAggregatedFwbp = 0;
+            let countAggregatedFwbp = 0;
+            for (const [lifeId, fwbpArray] of aggregatedFwbp.entries()) {
+                if (fwbpArray.length > 0) {
+                    // Average the FWBP for this life over the window if multiple entries
+                    const lifeAverageFwbp = fwbpArray.reduce((sum, val) => sum + val, 0) / fwbpArray.length;
+                    sumAggregatedFwbp += lifeAverageFwbp;
+                    countAggregatedFwbp++;
+                }
+            }
+
+
+            const averageGroupFrequencyWeightedBandpower = countAggregatedFwbp > 0 ? sumAggregatedFwbp / countAggregatedFwbp : 0;
+
             await cohort.update({
-                groupFrequencyWeightedBandpower: averageFrequencyWeightedBandpower,
-                lastGroupBandpowerCalculatedAt: new Date(), // New field to track last update
+                groupFrequencyWeightedBandpower: averageGroupFrequencyWeightedBandpower,
+                lastGroupBandpowerCalculatedAt: new Date(),
             });
-            console.log(`Updated group bandpower for cohort ${cohort.brainwaveAlignmentCohortId}: ${averageFrequencyWeightedBandpower.toFixed(2)}`);
+            console.log(`[Group Bandpower Miner] Updated group bandpower for cohort ${cohort.brainwaveAlignmentCohortId}: ${averageGroupFrequencyWeightedBandpower.toFixed(2)}`);
         }
     } catch (err) {
-        console.error('Error in scheduled group bandpower calculation:', err);
+        console.error('[Group Bandpower Miner] Error in scheduled group bandpower calculation:', err);
     }
 }
 
+/**
+ * Main wrapper function to run all miner tasks for the most recently completed global epoch.
+ * This function should be scheduled by your cron job.
+ * @param {number} epochDurationMs - The duration of each global epoch in milliseconds (e.g., 1000 for 1 second).
+ */
+async function runMinerTasksForLastEpoch(epochDurationMs = 1000) {
+    const now = Date.now();
+    // Calculate the start of the *last completed* epoch
+    const epochStartTimeMs = Math.floor((now - 1) / epochDurationMs) * epochDurationMs; // -1 to ensure we pick a *completed* epoch
+    const epochStartTime = new Date(epochStartTimeMs);
+    const epochEndTime = new Date(epochStartTimeMs + epochDurationMs);
+
+    console.log(`--- Running miner tasks for epoch: ${epochStartTime.toISOString()} to ${epochEndTime.toISOString()} ---`);
+
+    // Ensure database connection is ready if not handled globally by your app start
+    // For example: require('./dataModels/database').sequelize.sync();
+
+    await calculateAndStorePLVsForCohort(epochStartTime, epochEndTime);
+    await calculateAndStoreSchumannAlignment(epochStartTime, epochEndTime);
+    // The group bandpower calculation still uses a relative time window
+    // If you need it epoch-aligned too, modify it to accept epochStartTime/EndTime
+    await calculateAndStoreGroupBandpowerForCohorts();
+
+    console.log(`--- Miner tasks completed for epoch: ${epochStartTime.toISOString()} ---`);
+}
 
 module.exports = {
     calculateAndStorePLVsForCohort,
     calculateAndStoreSchumannAlignment,
-    calculateAndStoreGroupBandpowerForCohorts // Export the new function
+    calculateAndStoreGroupBandpowerForCohorts,
+    runMinerTasksForLastEpoch // Export the new main entry point
 };
