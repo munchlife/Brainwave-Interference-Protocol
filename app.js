@@ -11,7 +11,7 @@ const http = require('http');
 const cron = require('node-cron');
 
 const { initWebSocketServer } = require('./websocketHandler');
-const { calculateAndStorePLVsForCohort, calculateAndStoreSchumannAlignment } = require('./brainwaveMiner');
+const { calculateAndStorePLVsForCohort, calculateAndStoreSchumannAlignment, calculateAndStoreGroupBandpowerForCohorts } = require('./brainwaveMiner');
 
 // Now, when associations.js (and thus database.js) is required,
 // process.env will already have the values from your .env file.
@@ -62,19 +62,27 @@ initWebSocketServer(httpServer);
 const config = {
     isPLVCalculationActive: process.env.ENABLE_PLV_CALCULATION === 'true',
     isSchumannCalculationActive: process.env.ENABLE_SCHUMANN_CALCULATION === 'true',
+    isGroupBandpowerCalculationActive: process.env.ENABLE_GROUP_BANDPOWER_CALCULATION === 'true',
 };
 
-cron.schedule('*/15 * * * * *', async () => {
+cron.schedule('*/1 * * * * *', async () => {
     if (config.isPLVCalculationActive) {
         console.log(`[${new Date().toISOString()}] Running scheduled PLV calculation...`);
         await calculateAndStorePLVsForCohort();
     }
 });
 
-cron.schedule('*/30 * * * * *', async () => {
+cron.schedule('*/1 * * * * *', async () => {
     if (config.isSchumannCalculationActive) {
         console.log(`[${new Date().toISOString()}] Running scheduled Schumann alignment calculation...`);
         await calculateAndStoreSchumannAlignment();
+    }
+});
+
+cron.schedule('*/1 * * * * *', async () => {
+    if (config.isGroupBandpowerCalculationActive) {
+        console.log(`[${new Date().toISOString()}] Running scheduled group bandpower calculation...`);
+        await calculateAndStoreGroupBandpowerForCohorts();
     }
 });
 
