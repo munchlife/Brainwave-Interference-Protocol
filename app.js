@@ -1,8 +1,7 @@
 // app.js
 
-// --- FIX: dotenv.config() MUST BE THE VERY FIRST THING ---
+// Load environment variables from .env file
 require('dotenv').config();
-// --- END FIX ---
 
 const express = require('express');
 const cors = require('cors');
@@ -10,11 +9,14 @@ const path = require("path");
 const http = require('http');
 const cron = require('node-cron');
 
+// Import WebSocket handler and Brainwave Miner functions
 const { initWebSocketServer } = require('./websocketHandler');
-const { calculateAndStorePLVsForCohort, calculateAndStoreSchumannAlignment, calculateAndStoreGroupBandpowerForCohorts } = require('./brainwaveMiner');
+const {
+    runMinerTasksForLastEpoch,
+    calculateAndStoreGroupBandpowerForCohorts
+} = require('./brainwaveMiner');
 
-// Now, when associations.js (and thus database.js) is required,
-// process.env will already have the values from your .env file.
+// Import Sequelize models and associations
 const {
     BrainwaveAlignmentCohort,
     CohortCheckin,
@@ -29,14 +31,16 @@ const {
 const app = express();
 app.use(express.json());
 
+// Configure CORS for frontend access
 app.use(cors({
     origin: 'http://localhost:1234',
     credentials: true,
 }));
 
+// Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// === Routes ===
+// === Route Imports ===
 const loginRoutes = require('./routes/login');
 const lifeRoutes = require('./routes/life');
 const brainwaveAlignmentCohortRoutes = require('./routes/brainwaveAlignmentCohort');
@@ -44,7 +48,7 @@ const interferenceReceiptRoutes = require('./routes/interferenceReceipt');
 const schumannResonanceRoutes = require('./routes/schumannResonance');
 const brainwaveAnalyticsRoutes = require('./routes/brainwaveAnalytics');
 
-// === Register Routes ===
+// === Register API Routes ===
 app.use('/api/login', loginRoutes);
 app.use('/api/life', lifeRoutes);
 app.use('/api/brainwaveAlignmentCohort', brainwaveAlignmentCohortRoutes);
@@ -52,45 +56,45 @@ app.use('/api/interferenceReceipt', interferenceReceiptRoutes);
 app.use('/api/schumannResonance', schumannResonanceRoutes);
 app.use('/api/brainwaveAnalytics', brainwaveAnalyticsRoutes);
 
-// === Create HTTP Server ===
+// Create HTTP server for Express and WebSockets
 const httpServer = http.createServer(app);
 
-// === Initialize WebSocket Server ===
+// Initialize WebSocket server on the HTTP server
 initWebSocketServer(httpServer);
 
 // === Scheduled Brainwave Mining Tasks ===
-const config = {
-    isPLVCalculationActive: process.env.ENABLE_PLV_CALCULATION === 'true',
-    isSchumannCalculationActive: process.env.ENABLE_SCHUMANN_CALCULATION === 'true',
-    isGroupBandpowerCalculationActive: process.env.ENABLE_GROUP_BANDPOWER_CALCULATION === 'true',
-};
 
-cron.schedule('*/1 * * * * *', async () => {
-    if (config.isPLVCalculationActive) {
-        console.log(`[${new Date().toISOString()}] Running scheduled PLV calculation...`);
-        await calculateAndStorePLVsForCohort();
+// Define the duration for global time epochs (e.g., 1000ms for 1-second epochs)
+const EPOCH_DURATION_MS = 1000;
+
+// Schedule epoch-aligned PLV and Schumann Alignment calculations
+cron.schedule('*/1 * * * * *', async () => { // Runs every second
+    try {
+        console.log(`[${new Date().toISOString()}] Running epoch-aligned miner tasks...`);
+        await runMinerTasksForLastEpoch(EPOCH_DURATION_MS);
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error during epoch-aligned miner tasks:`, error);
     }
 });
 
-cron.schedule('*/1 * * * * *', async () => {
-    if (config.isSchumannCalculationActive) {
-        console.log(`[${new Date().toISOString()}] Running scheduled Schumann alignment calculation...`);
-        await calculateAndStoreSchumannAlignment();
+// Schedule Group Bandpower calculation (runs independently, uses relative time window)
+cron.schedule('*/1 * * * * *', async () => { // Runs every second
+    // Check environment variable to enable/disable this specific task
+    if (process.env.ENABLE_GROUP_BANDPOWER_CALCULATION === 'true') {
+        try {
+            console.log(`[${new Date().toISOString()}] Running scheduled group bandpower calculation...`);
+            await calculateAndStoreGroupBandpowerForCohorts();
+        } catch (error) {
+            console.error(`[${new Date().toISOString()}] Error during scheduled group bandpower calculation:`, error);
+        }
     }
 });
 
-cron.schedule('*/1 * * * * *', async () => {
-    if (config.isGroupBandpowerCalculationActive) {
-        console.log(`[${new Date().toISOString()}] Running scheduled group bandpower calculation...`);
-        await calculateAndStoreGroupBandpowerForCohorts();
-    }
-});
 
-
-// === DB Sync & Server Start ===
+// === Database Synchronization & Server Start ===
 async function startServer() {
     try {
-        // Sync models in order of dependencies.
+        // Sync Sequelize models with the database in dependency order
         await LifeAccount.sync({ alter: true });
         console.log('LifeAccount table synced');
 
@@ -112,22 +116,24 @@ async function startServer() {
         await SchumannResonance.sync({ alter: true });
         console.log('SchumannResonance table synced');
 
+        // Start the HTTP server (handles Express routes and WebSockets)
         const PORT = process.env.PORT || 3000;
         httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
     } catch (err) {
         console.error('Database sync failed:', err);
-        process.exit(1);
+        process.exit(1); // Exit process if database synchronization fails
     }
 }
 
+// Initiate server startup sequence
 startServer()
     .then(() => {
         console.log('Server startup completed');
     })
     .catch(err => {
         console.error('Failed to start server:', err);
-        process.exit(1);
+        process.exit(1); // Exit process if server fails to start
     });
 
 module.exports = app;
