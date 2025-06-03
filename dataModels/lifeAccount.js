@@ -24,10 +24,10 @@ const LifeAccount = sequelize.define('LifeAccount', {
         unique: true,
     },
     passcode: {
-        type: DataTypes.STRING, // Store as plain text or hashed, your choice
+        type: DataTypes.STRING,
         allowNull: true,
     },
-    passcodeExpiresAt: {
+    passcodeExpiration: {
         type: DataTypes.DATE,
         allowNull: true,
     },
@@ -36,14 +36,10 @@ const LifeAccount = sequelize.define('LifeAccount', {
         allowNull: false,
         defaultValue: false,
     },
-    checkedIn: {
+    isSchumannActive: {
         type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-    },
-    isAdmin: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false // Ensures non-admins are false by default
+        defaultValue: false, // Default to false, can be set to true by the user or an admin
+        allowNull: false
     },
     influencerEmail: {
         type: DataTypes.STRING, // Add influencerEmail field

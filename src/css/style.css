@@ -1,0 +1,97 @@
+/* src/css/style.css */
+
+body {
+    font-family: 'Titillium Web', sans-serif;
+    background: linear-gradient(135deg, #4B0082, #808080);
+    color: white;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+.container {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+h1 {
+    margin-bottom: 20px;
+    font-size: 24px;
+}
+.input-group {
+    margin-bottom: 15px;
+    text-align: left;
+}
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 14px;
+}
+input {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 16px;
+}
+input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #4B0082; /* Purple button */
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin-top: 10px;
+}
+button:hover {
+    background: #6A0DAD; /* Lighter purple on hover */
+}
+#passcode-group, #login-button {
+    display: none; /* Hidden initially */
+    margin-top: 15px;
+}
+/* Style for the connect button - makes it natural width */
+#connect {
+    width: auto; /* Override the 100% width from style.css */
+    display: inline-block; /* Ensure it behaves like a standard button */
+    padding: 10px 20px; /* Give it some standard button padding */
+    border: none;
+    border-radius: 8px;
+    background: #4B0082; /* Purple color */
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin-top: 10px; /* Add some space above it */
+}
+
+#connect:hover {
+    background: #6A0DAD; /* Lighter purple on hover */
+}
+#message {
+    margin-top: 10px;
+    font-size: 14px;
+}
+.success {
+    color: #28A745; /* Green for success */
+}
+.error {
+    color: #FF4500; /* Red for errors */
+}

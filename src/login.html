@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Brainwave Interference Protocol - Login</title>
+    <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+<div class="container">
+    <h1>Brainwave Interference Protocol Login</h1>
+    <div class="input-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="Enter your email" required />
+    </div>
+    <div class="input-group">
+        <label for="firstName">First Name</label>
+        <input type="text" id="firstName" placeholder="Enter your first name" required />
+    </div>
+    <div class="input-group">
+        <label for="lastName">Last Name</label>
+        <input type="text" id="lastName" placeholder="Enter your last name" required />
+    </div>
+    <button id="send-passcode-button" onclick="sendPasscode()">Send Passcode</button>
+    <div id="passcode-group" class="input-group">
+        <label for="passcode">Passcode</label>
+        <input type="text" id="passcode" placeholder="Enter your passcode" />
+    </div>
+    <button id="login-button" onclick="login()">Log In</button>
+    <div id="message"></div>
+</div>
+
+<script src="config.js"></script>
+<script>
+    function setMessage(message, isSuccess = false) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = message;
+        messageDiv.className = isSuccess ? 'success' : 'error';
+    }
+
+    async function sendPasscode() {
+        const email = document.getElementById('email').value.trim();
+        const firstName = document.getElementById('firstName').value.trim();
+        const lastName = document.getElementById('lastName').value.trim();
+
+        if (!email || !firstName || !lastName) {
+            setMessage('Please fill in email, first name, and last name.');
+            return;
+        }
+
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!emailRegex.test(email)) {
+            setMessage('Please enter a valid email address.');
+            return;
+        }
+
+        if (firstName.length < 1 || firstName.length > 50 || lastName.length < 1 || lastName.length > 50) {
+            setMessage('Names must be 1-50 characters.');
+            return;
+        }
+
+        try {
+            console.log('Sending passcode request:', { email, firstName, lastName });
+            const passcodeUrl = `${window.API_BASE_URL}/login/send-passcode`;
+            console.log('Sending passcode request to:', passcodeUrl);
+            const response = await fetch(passcodeUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, firstName, lastName })
+            });
+
+            console.log('Send passcode response status:', response.status, response.statusText);
+            console.log('Send passcode response headers:', Object.fromEntries(response.headers.entries()));
+
+            const responseClone = response.clone();
+            let result;
+            try {
+                result = await response.json();
+            } catch (jsonErr) {
+                const rawText = await responseClone.text();
+                console.error('Failed to parse send passcode response:', {
+                    errorMessage: jsonErr.message,
+                    errorStack: jsonErr.stack,
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    url: response.url,
+                    rawText
+                });
+                throw new Error('Invalid server response for send passcode.');
+            }
+
+            console.log('Send passcode response:', result);
+
+            if (!response.ok) {
+                throw new Error(result.details || result.error || 'Failed to send passcode.');
+            }
+
+            document.getElementById('passcode-group').style.display = 'block';
+            document.getElementById('login-button').style.display = 'block';
+            setMessage('Passcode sent to your email. Please check and enter it above.', true);
+        } catch (error) {
+            console.error('Send passcode error:', error.message, error.stack);
+            setMessage(error.message || 'Error sending passcode email. Please try again or contact support.');
+        }
+    }
+
+    async function login() {
+        const email = document.getElementById('email').value.trim();
+        const passcode = document.getElementById('passcode').value.trim();
+
+        if (!email) {
+            setMessage('Email is required.');
+            return;
+        }
+        if (!passcode) {
+            setMessage('Please enter the passcode.');
+            return;
+        }
+
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!emailRegex.test(email)) {
+            setMessage('Please enter a valid email address.');
+            return;
+        }
+
+        const passcodeRegex = /^\d{6}$/;
+        if (!passcodeRegex.test(passcode)) {
+            setMessage('Passcode must be a 6-digit number.');
+            return;
+        }
+
+        try {
+            const payload = { email, passcode };
+            const loginUrl = `${window.API_BASE_URL}/login/login`;
+            console.log('Sending login request to:', loginUrl, 'Payload:', payload);
+            const response = await fetch(loginUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            console.log('Login response status:', response.status, response.statusText);
+            console.log('Login response headers:', Object.fromEntries(response.headers.entries()));
+
+            const responseClone = response.clone();
+            let result;
+            try {
+                result = await response.json();
+            } catch (jsonErr) {
+                const rawText = await responseClone.text();
+                console.error('Failed to parse login response:', {
+                    errorMessage: jsonErr.message,
+                    errorStack: jsonErr.stack,
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: Object.fromEntries(response.headers.entries()),
+                    url: response.url,
+                    rawText
+                });
+                throw new Error(`Invalid server response for login: ${rawText || 'Empty response'}`);
+            }
+
+            console.log('Login response body:', result);
+
+            if (!response.ok) {
+                throw new Error(result.error || result.details || `Login failed with status ${response.status}`);
+            }
+
+            let lifeId;
+            if (result.lifeId) {
+                lifeId = result.lifeId;
+            } else if (result.token) {
+                try {
+                    const payload = JSON.parse(atob(result.token.split('.')[1]));
+                    lifeId = payload.lifeId;
+                } catch (jwtErr) {
+                    console.error('Failed to parse JWT:', jwtErr.message);
+                }
+            }
+
+            if (lifeId) {
+                localStorage.setItem('lifeId', lifeId);
+                console.log('Stored lifeId:', lifeId);
+            } else {
+                console.warn('No lifeId found in response, proceeding anyway');
+            }
+            if (result.token) {
+                localStorage.setItem('token', result.token);
+                console.log('Stored token');
+            }
+
+            console.log('Redirecting to home.html');
+            window.location.href = 'home.html';
+        } catch (error) {
+            console.error('Login error:', error.message, error.stack);
+            setMessage(error.message || 'Error logging in. Please verify your passcode or try again.');
+        }
+    }
+</script>
+</body>
+</html>

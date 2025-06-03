@@ -19,6 +19,11 @@ const BrainwaveAlignmentCohort = sequelize.define('BrainwaveAlignmentCohort', {
         onUpdate: 'CASCADE',
         onDelete: 'SET NULL', // If admin account is deleted, don't delete the cohort
     },
+    isActive: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false, // Default to false, can be set to true by an admin/logic
+        allowNull: false
+    },
     topic: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -125,6 +130,14 @@ const BrainwaveAlignmentCohort = sequelize.define('BrainwaveAlignmentCohort', {
     netCohortInterferenceBalance: {
         type: DataTypes.FLOAT,
         defaultValue: 0,
+    },
+    lastGroupPLVCalculatedAt: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    lastGroupBandpowerCalculatedAt: {
+        type: DataTypes.DATE,
+        allowNull: true
     },
     lifeId: {
         type: DataTypes.INTEGER,

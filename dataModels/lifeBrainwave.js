@@ -9,6 +9,14 @@ const LifeBrainwave = sequelize.define('LifeBrainwave', {
         autoIncrement: true,
         allowNull: false,
     },
+    lifeId: {
+        type: DataTypes.INTEGER, // Must match LifeAccount's lifeId type
+        allowNull: false,
+        references: { // THIS IS CRITICAL FOR FOREIGN KEY ENFORCEMENT
+            model: 'LifeAccounts', // The exact tableName of your LifeAccount model
+            key: 'lifeId',         // The primary key column name in LifeAccounts
+        },
+    },
     rawEEGJSON: {
         type: DataTypes.TEXT, // Stores raw EEG as a JSON string
         allowNull: true,
@@ -16,6 +24,10 @@ const LifeBrainwave = sequelize.define('LifeBrainwave', {
     rawEEGBinary: {
         type: DataTypes.BLOB, // Stores raw EEG as binary data
         allowNull: true,
+    },
+    channel: {
+        type: DataTypes.STRING, // e.g., 'EEG_0', 'TP9', 'AF7'
+        allowNull: false,
     },
     bandpowerDelta: {
         type: DataTypes.FLOAT,
