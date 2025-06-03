@@ -16,34 +16,37 @@ document.addEventListener('DOMContentLoaded', () => {
     const phaseOutputElement = document.getElementById('phaseOutput'); // Renamed for clarity
     const SAMPLE_RATE = 256;
 
-    const WS_SERVER_URL = 'ws://localhost:3000';
+    // Base WebSocket server URL
+    const BASE_WS_SERVER_URL = 'ws://localhost:3000';
     let ws = null;
 
     const storedLifeId = localStorage.getItem('lifeId');
-    console.log("localStorage.getItem('lifeId') returned:", storedLifeId, "Type:", typeof storedLifeId);
+    const storedToken = localStorage.getItem('token'); // Get the stored JWT token
 
-    if (!storedLifeId) {
-        outputElement.textContent = 'Error: No lifeId found. Please log in first.';
-        phaseOutputElement.textContent = ''; // Clear phase output if no lifeId
-        console.error('No lifeId found in localStorage. User must log in.');
-        return;
+    console.log("[Frontend Startup] localStorage.getItem('lifeId') returned:", storedLifeId, "Type:", typeof storedLifeId);
+    console.log("[Frontend Startup] localStorage.getItem('token') returned:", storedToken ? '[Token Found]' : '[Token Missing]', "Type:", typeof storedToken);
+
+    // Initial authentication check before even attempting connection
+    if (!storedLifeId || !storedToken) {
+        outputElement.textContent = 'Error: Authentication required. Please log in first.';
+        phaseOutputElement.textContent = ''; // Clear phase output
+        console.error('[Frontend Error] Authentication token or lifeId missing in localStorage. User must log in.');
+        return; // Stop execution if auth info is missing
     }
 
     const LIFE_ID = parseInt(storedLifeId, 10);
-    console.log("parseInt(storedLifeId, 10) returned:", LIFE_ID, "Type:", typeof LIFE_ID);
+    console.log("[Frontend Startup] parseInt(storedLifeId, 10) returned:", LIFE_ID, "Type:", typeof LIFE_ID);
 
     if (isNaN(LIFE_ID)) {
         outputElement.textContent = 'Error: Invalid lifeId found. Please log in again.';
         phaseOutputElement.textContent = ''; // Clear phase output if invalid lifeId
-        console.error('LifeId from localStorage is not a valid number:', storedLifeId);
-        return;
+        console.error('[Frontend Error] LifeId from localStorage is not a valid number:', storedLifeId);
+        return; // Stop execution if lifeId is invalid
     }
 
-    console.log("Using LIFE_ID:", LIFE_ID, "Type:", typeof LIFE_ID);
+    console.log("[Frontend Startup] Using LIFE_ID:", LIFE_ID, "Type:", typeof LIFE_ID);
 
-    // Buffer to store EEG samples for each channel (local to this scope)
-    // Note: The backend filter now only processes AF7, AF8. You might consider
-    // if you still need to buffer TP9 and TP10 on the frontend if they're not used.
+    // Buffer to store EEG samples for each channel
     let buffer = {
         TP9: [], AF7: [], AF8: [], TP10: []
     };
@@ -52,24 +55,29 @@ document.addEventListener('DOMContentLoaded', () => {
     async function start() {
         outputElement.textContent = "Attempting to connect to Muse S...";
         phaseOutputElement.textContent = "Waiting for Muse data..."; // Initial message for phase section
-        console.log("start() function called. Attempting client.connect()...");
+        console.log("[Start Function] start() called. Attempting client.connect()...");
 
-        // Establish WebSocket connection
+        // Establish WebSocket connection, including the token in the URL query parameter
         try {
-            ws = new WebSocket(WS_SERVER_URL);
+            const WS_SERVER_URL_WITH_TOKEN = `${BASE_WS_SERVER_URL}/?token=${storedToken}`;
+
+            console.log(`[Frontend DEBUG] Stored Token (first 20 chars): ${storedToken ? storedToken.substring(0, 20) + '...' : 'NONE'}`);
+            console.log(`[Frontend DEBUG] Attempting to connect to WS URL: ${WS_SERVER_URL_WITH_TOKEN}`);
+
+            ws = new WebSocket(WS_SERVER_URL_WITH_TOKEN);
 
             ws.onopen = () => {
-                console.log('WebSocket connected to server.');
+                console.log('[WebSocket] Connected to server.');
                 outputElement.textContent = 'WebSocket connected. Attempting Muse connection...';
                 phaseOutputElement.textContent = 'WebSocket connected. Waiting for EEG data...'; // Update phase section too
             };
 
             ws.onmessage = (event) => {
-                console.log('--- Frontend: Message from server received! ---');
-                console.log('Frontend: Raw event data:', event.data);
+                // console.log('--- Frontend: Message from server received! ---'); // Suppress verbose log
+                // console.log('Frontend: Raw event data:', event.data); // Suppress verbose raw data log
                 try {
                     const parsedData = JSON.parse(event.data);
-                    console.log('Frontend: Parsed message:', parsedData);
+                    // console.log('Frontend: Parsed message:', parsedData); // Keep this for now, useful for debugging
 
                     if (parsedData.status === 'success' && parsedData.metrics) {
                         const metrics = parsedData.metrics;
@@ -78,8 +86,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         // --- Format Bandpower Data ---
                         let bandpowerString = `--- Latest Bandpowers for ${channel} ---\n`;
                         bandpowerString += `Overall Freq-Weighted Centroid: ${metrics.frequencyWeightedBandpower ? metrics.frequencyWeightedBandpower.toFixed(2) : 'N/A'} Hz\n`;
-                        bandpowerString += `Bandpowers (uV^2/Hz):\n`; // Corrected unit label
-                        bandpowerString += `  Delta: ${metrics.bandpowers.delta ? metrics.bandpowers.delta.toFixed(8) : 'N/A'}\n`; // Increased precision for linear power
+                        bandpowerString += `Bandpowers (uV^2/Hz):\n`;
+                        bandpowerString += `  Delta: ${metrics.bandpowers.delta ? metrics.bandpowers.delta.toFixed(8) : 'N/A'}\n`;
                         bandpowerString += `  Theta: ${metrics.bandpowers.theta ? metrics.bandpowers.theta.toFixed(8) : 'N/A'}\n`;
                         bandpowerString += `  Alpha: ${metrics.bandpowers.alpha ? metrics.bandpowers.alpha.toFixed(8) : 'N/A'}\n`;
                         bandpowerString += `  Beta: ${metrics.bandpowers.beta ? metrics.bandpowers.beta.toFixed(8) : 'N/A'}\n`;
@@ -95,55 +103,69 @@ document.addEventListener('DOMContentLoaded', () => {
                         phaseString += `  Gamma: ${metrics.phases.gamma ? metrics.phases.gamma.toFixed(2) : 'N/A'}\n`;
 
                         // --- Update the UI elements ---
-                        outputElement.textContent = bandpowerString; // Assign bandpower data to the 'output' section
-                        phaseOutputElement.textContent = phaseString; // Assign phase data to the 'phaseOutput' section
+                        outputElement.textContent = bandpowerString;
+                        phaseOutputElement.textContent = phaseString;
 
                     } else if (parsedData.status === 'error') {
                         outputElement.textContent = `Backend Error: ${parsedData.message}`;
                         phaseOutputElement.textContent = ''; // Clear phase output on error
-                        console.error('Frontend: Backend reported an error:', parsedData.message);
+                        console.error('[Frontend Error] Backend reported an error:', parsedData.message);
                     } else {
-                        outputElement.textContent = `Backend sent: ${JSON.stringify(parsedData)}`;
+                        outputElement.textContent = `Backend sent unexpected message: ${JSON.stringify(parsedData)}`;
                         phaseOutputElement.textContent = ''; // Clear phase output for unexpected messages
+                        console.warn('[Frontend Warn] Backend sent unexpected message format:', parsedData);
                     }
 
                 } catch (e) {
-                    console.error('Frontend: Error parsing message from server:', e, event.data);
+                    console.error('[Frontend Error] Error parsing message from server:', e, event.data);
                     outputElement.textContent = `Frontend Error: Received invalid message from server. Raw: ${event.data}`;
                     phaseOutputElement.textContent = ''; // Clear phase output on parse error
                 }
             };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                outputElement.textContent = 'WebSocket error. Check server.';
-                phaseOutputElement.textContent = 'WebSocket error.'; // Update phase section too
+            ws.onerror = (errorEvent) => {
+                console.error('[WebSocket Error] An error occurred:', errorEvent);
+                outputElement.textContent = 'WebSocket error. Check console and server logs.';
+                phaseOutputElement.textContent = 'WebSocket error.';
+                // Attempt to display error message from the event if available
+                if (errorEvent && errorEvent.message) {
+                    outputElement.textContent += ` Reason: ${errorEvent.message}`;
+                } else if (errorEvent && errorEvent.code) {
+                    outputElement.textContent += ` Code: ${errorEvent.code}`;
+                }
             };
 
-            ws.onclose = () => {
-                console.log('WebSocket disconnected.');
-                outputElement.textContent = 'WebSocket disconnected. Please refresh.';
-                phaseOutputElement.textContent = 'WebSocket disconnected.'; // Update phase section too
+            ws.onclose = (event) => {
+                console.log(`[WebSocket] Disconnected. Code: ${event.code}, Reason: ${event.reason || 'No reason specified'}`);
+                let disconnectMessage = 'WebSocket disconnected.';
+                if (event.code === 1000) {
+                    disconnectMessage += ' (Normal closure)';
+                } else if (event.code === 1008) { // Policy Violation (e.g., unauthorized)
+                    disconnectMessage += ' (Unauthorized or Policy Violation - check token/lifeId)';
+                } else if (event.code === 1006) { // Abnormal closure (no close frame received)
+                    disconnectMessage += ' (Abnormal closure - server might have crashed or connection lost)';
+                } else if (event.code === 1001) { // Going Away
+                    disconnectMessage += ' (Browser/tab closing)';
+                } else {
+                    disconnectMessage += ` (Code: ${event.code})`;
+                }
+                outputElement.textContent = `${disconnectMessage} Please refresh or check server.`;
+                phaseOutputElement.textContent = `${disconnectMessage}.`; // Update phase section too
             };
-
-            // This part is redundant as onopen will trigger on success
-            // await new Promise((resolve, reject) => {
-            //     ws.onopen = resolve;
-            //     ws.onerror = reject;
-            // });
 
         } catch (e) {
-            console.error("Error establishing WebSocket connection:", e);
+            console.error("[Start Function Error] Failed to establish WebSocket connection:", e);
             outputElement.textContent = 'Failed to connect to WebSocket: ' + (e.message || e);
+            phaseOutputElement.textContent = 'WebSocket connection failed.';
             return; // Stop if WebSocket fails
         }
 
         // Connect to Muse and start streaming
         try {
             await client.connect();
-            console.log("client.connect() successful! Attempting client.start()...");
+            console.log("[Muse Client] client.connect() successful! Attempting client.start()...");
             await client.start();
-            console.log("client.start() successful. Subscribing to EEG readings...");
+            console.log("[Muse Client] client.start() successful. Subscribing to EEG readings...");
 
             outputElement.textContent = "Connected to Muse S. Streaming EEG data to server...";
             phaseOutputElement.textContent = "Streaming raw data..."; // Update phase section too
@@ -153,30 +175,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const electrodeNames = ['TP9', 'AF7', 'AF8', 'TP10'];
                 const channelName = electrodeNames[channel] || `Unknown Channel ${channel}`;
 
-                // Only buffer allowed channels if you want to optimize frontend
-                // Though backend already filters, it's good practice
-                // if (['AF7', 'AF8'].includes(channelName)) {
                 if (!buffer[channelName]) buffer[channelName] = [];
                 buffer[channelName].push(...reading.samples);
-                // }
             });
-            console.log("EEG readings subscription initiated.");
+            console.log("[Muse Client] EEG readings subscription initiated.");
 
             // Interval to send buffered data to the server
             setInterval(() => {
+                // Ensure WebSocket is open and ready before sending data
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    // Only send data for channels processed by the backend (AF7, AF8)
                     const channelNamesToSend = ['AF7', 'AF8']; // Only send AF7 and AF8
-                    const currentTimestamp = Date.now();
+                    const currentTimestamp = Date.now(); // Timestamp when data is *sent* from client
 
                     for (let ch of channelNamesToSend) {
-                        // Ensure we only send samples that have accumulated since last send
                         const samplesToSend = [...buffer[ch]];
                         buffer[ch] = []; // Clear the buffer after copying
 
                         if (samplesToSend.length > 0) {
                             const message = {
-                                lifeId: LIFE_ID,
+                                lifeId: LIFE_ID, // Use the authenticated lifeId from localStorage
                                 channelIdentifier: ch,
                                 samples: samplesToSend,
                                 sampleRate: SAMPLE_RATE,
@@ -186,17 +203,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 } else {
-                    console.warn('WebSocket not open. Cannot send data.');
+                    // This warning is expected if WebSocket fails to connect or closes.
+                    // The primary issue is the initial WebSocket connection failure.
+                    console.warn('[WebSocket] WebSocket not open. Cannot send data.');
                     outputElement.textContent = 'WebSocket not connected. Please refresh or check server.';
-                    phaseOutputElement.textContent = 'WebSocket not connected.'; // Update phase section too
+                    phaseOutputElement.textContent = 'WebSocket not connected.';
                 }
             }, 500); // Send data every 500ms
 
         } catch (e) {
-            console.error("Error during Muse connection or start:", e);
+            console.error("[Muse Client Error] Error during Muse connection or start:", e);
             outputElement.textContent = 'Muse connection failed: ' + (e.message || e);
-            phaseOutputElement.textContent = 'Muse connection failed.'; // Update phase section too
-            if (ws) ws.close();
+            phaseOutputElement.textContent = 'Muse connection failed.';
+            if (ws && ws.readyState !== WebSocket.CLOSED) ws.close(); // Close WebSocket if Muse connection fails
         }
     }
 
